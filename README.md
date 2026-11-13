@@ -93,6 +93,12 @@
 
 ## Features
 
+### AI assistance
+
+The AI features from [flameshot-ai](https://github.com/agarnung/flameshot-ai) add an AI button to the screenshot toolbar. You can ask a vision model questions about a capture, translate visible text, or request an explanation in a native dialog. Configure an OpenAI-compatible vision endpoint and enable the feature in the application settings.
+
+### Screenshot features
+
 - Customizable appearance.
 - Easy to use.
 - In-app screenshot editing.

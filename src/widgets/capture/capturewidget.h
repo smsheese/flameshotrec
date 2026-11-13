@@ -30,7 +30,6 @@ class QLabel;
 class QPaintEvent;
 class QResizeEvent;
 class QMouseEvent;
-class QScreen;
 class QShortcut;
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -84,6 +83,7 @@ private slots:
     void handleButtonRightClick(CaptureToolButton* b);
     void setDrawColor(const QColor& c);
     void onToolSizeChanged(int size);
+    void onToolSizeSettled(int size);
     void updateActiveLayer(int layer);
     void onMoveCaptureToolUp(int captureToolIndex);
     void onMoveCaptureToolDown(int captureToolIndex);
@@ -163,7 +163,6 @@ private:
 
     // Context information
     CaptureContext m_context;
-    QScreen* m_selectedScreen = nullptr;
 
     // Main ui color
     QColor m_uiColor;
@@ -179,6 +178,7 @@ private:
     bool m_newSelection;
     bool m_movingSelection;
     bool m_captureDone;
+    bool m_exportedKeepOpen;
     bool m_previewEnabled;
     bool m_adjustmentButtonPressed;
     bool m_configError;

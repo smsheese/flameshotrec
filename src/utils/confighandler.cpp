@@ -139,6 +139,14 @@ static QMap<class QString, QSharedPointer<ValueHandler>>
     OPTION("reverseArrow"                ,Bool               ( false         )),
     OPTION("arrowStyle"                  ,BoundedInt         ( 0, 1, 0       )),
     OPTION("insecurePixelate"            ,Bool               ( false         )),
+    // AI integration options
+    OPTION("iaEnabled"                   ,Bool               ( false         )),
+    OPTION("iaApiUrl"                    ,String             ( "https://api.openai.com/v1/chat/completions" )),
+    OPTION("iaApiToken"                  ,String             ( ""            )),
+    OPTION("iaModel"                     ,String             ( "gpt-4o"      )),
+    OPTION("iaDefaultMode"               ,String             ( "ask"         )),
+    OPTION("iaCopyResult"                ,Bool               ( true          )),
+    OPTION("iaShowDialog"                ,Bool               ( true          )),
 #if defined(Q_OS_WIN)
     // Not visible on settings dialog
     OPTION("ignorePrntScrForcesSnipping" ,Bool               ( false         )),
@@ -208,10 +216,10 @@ static QMap<QString, QSharedPointer<KeySequence>> recognizedShortcuts = {
     SHORTCUT("TYPE_DELETE_CURRENT_TOOL" ,   "Delete"                ),
 #endif
     SHORTCUT("TYPE_PIN"                 ,                           ),
+    SHORTCUT("TYPE_AI"                  ,   "Ctrl+I"                ),
     SHORTCUT("TYPE_SIZEINCREASE"        ,                           ),
     SHORTCUT("TYPE_SIZEDECREASE"        ,                           ),
     SHORTCUT("TYPE_CIRCLECOUNT"         ,                           ),
-    SHORTCUT("TYPE_CLOSE_ACTIVE_PIN_WINDOW"      ,   "Ctrl+Q"                ),
 };
 // clang-format on
 
@@ -378,10 +386,8 @@ void ConfigHandler::setToolSize(CaptureTool::Type toolType, int size)
         setDrawPixelateSize(size);
     } else if (toolType == CaptureTool::TYPE_CIRCLECOUNT) {
         setDrawCircleCounterSize(size);
-    } else {
-        // All other tools are sharing the same size. CaptureTool::NONE lands
-        // here too: no tool button is active, but the size still belongs to
-        // the shared bucket, which is what toolSize() returns for NONE.
+    } else if (toolType != CaptureTool::NONE) {
+        // All other tools are sharing the same size
         setDrawThickness(size);
     }
 }

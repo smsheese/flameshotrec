@@ -37,23 +37,6 @@ void setActivationPolicyAccessory()
 
 constexpr const char* visibleInDockProperty = "_visibleInDock";
 
-// NSMainMenuWindowLevel (24) + 2: above the menu bar, its status items and
-// the Dock, but below pop-up menus so Qt menus remain visible.
-constexpr long captureWindowLevel = 26;
-
-// Qt::WindowStaysOnTopHint maps to NSFloatingWindowLevel, which is below the
-// menu bar and the Dock, so they would cover parts of the capture overlay.
-void raiseAboveMenuBar(QWidget* widget)
-{
-    auto getWindow = reinterpret_cast<id (*)(id, SEL)>(objc_msgSend);
-    auto setLevel = reinterpret_cast<void (*)(id, SEL, long)>(objc_msgSend);
-    auto nsView = reinterpret_cast<id>(widget->winId());
-    id nsWindow = getWindow(nsView, sel_registerName("window"));
-    if (nsWindow != nullptr) {
-        setLevel(nsWindow, sel_registerName("setLevel:"), captureWindowLevel);
-    }
-}
-
 } // namespace
 
 #include <CoreGraphics/CoreGraphics.h>
@@ -67,6 +50,8 @@ void raiseAboveMenuBar(QWidget* widget)
 #include "utils/confighandler.h"
 #include "utils/screengrabber.h"
 #include "utils/screenshotsaver.h"
+#include "widgets/ai/aidialog.h"
+#include "widgets/ai/aichatwidget.h"
 #include "widgets/capture/capturewidget.h"
 #include "widgets/capturelauncher.h"
 #include "widgets/infowindow.h"
@@ -191,7 +176,6 @@ CaptureWidget* Flameshot::gui(const CaptureRequest& req)
             m_captureWindow->showFullScreen();
         } else {
             m_captureWindow->show();
-            raiseAboveMenuBar(m_captureWindow);
         }
         m_captureWindow->activateWindow();
         m_captureWindow->raise();
@@ -516,6 +500,10 @@ void Flameshot::exportCapture(const QPixmap& capture,
         }
     }
 
+    if (tasks & CR::AI) {
+        runAIBackend(capture);
+    }
+
 #ifdef ENABLE_IMGUR
     if (tasks & CR::UPLOAD) {
         if (!ConfigHandler().uploadWithoutConfirmation()) {
@@ -555,6 +543,47 @@ void Flameshot::setExternalWidget(bool b)
 bool Flameshot::haveExternalWidget()
 {
     return m_haveExternalWidget;
+}
+
+void Flameshot::runAIBackend(const QPixmap& capture)
+{
+    ConfigHandler config;
+    if (!config.iaEnabled()) {
+        return;
+    }
+
+    QString mode = config.iaDefaultMode();
+    if (mode.isEmpty()) {
+        mode = QStringLiteral("ask");
+    }
+    QString prompt;
+
+    // Show the native Qt dialog to choose mode and prompt.
+    if (config.iaShowDialog()) {
+        AIDialog dialog(mode, prompt);
+        if (dialog.exec() != QDialog::Accepted) {
+            return;
+        }
+        mode = dialog.mode();
+        prompt = dialog.prompt();
+    }
+
+    // Open the native chat window and start the request.
+    auto* chat = new AIChatWidget();
+    chat->setAttribute(Qt::WA_DeleteOnClose);
+    setExternalWidget(true);
+    QObject::connect(chat, &QObject::destroyed, this, [this]() {
+        setExternalWidget(false);
+    });
+    chat->show();
+    chat->activateWindow();
+    chat->raise();
+    chat->startRequest(config.iaApiUrl(),
+                       config.iaApiToken(),
+                       config.iaModel(),
+                       mode,
+                       prompt,
+                       capture);
 }
 
 // STATIC ATTRIBUTES

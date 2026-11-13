@@ -59,6 +59,7 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
   , m_toolSizeByKeyboard(0)
   , m_mouseIsClicked(false)
   , m_captureDone(false)
+  , m_exportedKeepOpen(false)
   , m_previewEnabled(true)
   , m_adjustmentButtonPressed(false)
   , m_configError(false)
@@ -200,7 +201,6 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
         if (selectedScreen != nullptr && windowHandle()) {
             windowHandle()->setScreen(selectedScreen);
         }
-        m_selectedScreen = selectedScreen;
 #endif
     }
 
@@ -264,6 +264,7 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
         updateCursor();
         m_toolSizeByKeyboard = 0;
         onToolSizeChanged(m_context.toolSize);
+        onToolSizeSettled(m_context.toolSize);
     });
 
     m_config.checkAndHandleError();
@@ -314,7 +315,9 @@ CaptureWidget::~CaptureWidget()
         }
     }
 #endif
-    if (m_captureDone) {
+    if (m_exportedKeepOpen) {
+        // Already exported while keeping the editor open; nothing else to do.
+    } else if (m_captureDone) {
         auto lastRegion = m_selection->geometry();
         const qreal scale = m_context.screenshot.devicePixelRatio();
         lastRegion.setTop(lastRegion.top() * scale);
@@ -350,6 +353,10 @@ void CaptureWidget::initButtons()
             buttonList->removeOne(CaptureTool::TYPE_OPEN_APP);
             buttonList->removeOne(CaptureTool::TYPE_PIN);
         }
+    }
+    if (!m_config.iaEnabled()) {
+        allButtonTypes.removeOne(CaptureTool::TYPE_AI);
+        visibleButtonTypes.removeOne(CaptureTool::TYPE_AI);
     }
     QVector<CaptureToolButton*> vectorButtons;
 
@@ -1184,13 +1191,6 @@ void CaptureWidget::moveEvent(QMoveEvent* e)
 {
     QWidget::moveEvent(e);
     m_context.widgetOffset = mapToGlobal(QPoint(0, 0));
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-    // If a compositor moved the window to the wrong screen, move it back
-    if (m_context.fullscreen && m_selectedScreen &&
-        geometry().topLeft() != m_selectedScreen->geometry().topLeft()) {
-        move(m_selectedScreen->geometry().topLeft());
-    }
-#endif
 }
 
 void CaptureWidget::changeEvent(QEvent* e)
@@ -1461,6 +1461,17 @@ void CaptureWidget::handleToolSignal(CaptureTool::Request r)
         case CaptureTool::REQ_CAPTURE_DONE_OK:
             m_captureDone = true;
             break;
+        case CaptureTool::REQ_CAPTURE_DONE_OK_KEEP_OPEN: {
+            if (m_exportedKeepOpen) {
+                break;
+            }
+            m_exportedKeepOpen = true;
+            QRect geometry(m_context.selection);
+            geometry.setTopLeft(geometry.topLeft() + m_context.widgetOffset);
+            Flameshot::instance()->exportCapture(
+              pixmap(), geometry, m_context.request);
+            break;
+        }
         case CaptureTool::REQ_CLEAR_SELECTION:
             if (m_panel->activeLayerIndex() >= 0) {
                 m_panel->setActiveLayer(-1);
@@ -1527,14 +1538,6 @@ void CaptureWidget::onToolSizeChanged(int t)
 {
 
     m_context.toolSize = t;
-
-    // Persist the new size straight away. This was previously deferred until
-    // the NotifierBox finished hiding, which meant a size set from the side
-    // panel was never saved at all, since that path never shows the notifier,
-    // and a size set with the wheel or the keyboard was lost whenever the
-    // capture was completed before the notifier's timeout had elapsed.
-    m_config.setToolSize(activeButtonToolType(), t);
-
     CaptureTool* tool = activeButtonTool();
     if (tool && tool->showMousePreview()) {
         setCursor(Qt::BlankCursor);
@@ -1561,6 +1564,11 @@ void CaptureWidget::onToolSizeChanged(int t)
 
     // Force a repaint to prevent artifacting
     this->repaint();
+}
+
+void CaptureWidget::onToolSizeSettled(int size)
+{
+    m_config.setToolSize(activeButtonToolType(), size);
 }
 
 void CaptureWidget::setDrawColor(const QColor& c)
