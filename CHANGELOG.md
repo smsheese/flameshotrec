@@ -9,7 +9,7 @@ upstream release named in the heading. Upstream's own release notes are in
 
 ## [15.1.0] — 2026-11-15
 
-First tagged release of `flameshotrec`. Based on upstream Flameshot 15.0.0.
+First feature release of `flameshotrec`. Based on upstream Flameshot 15.0.0.
 
 ### Screen recording (new)
 
