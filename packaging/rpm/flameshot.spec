@@ -1,5 +1,5 @@
 Name:    flameshot
-Version: 15.1.0
+Version: 15.1.1
 Release: 1%{?dist}
 Summary: Powerful yet simple to use screenshot software
 
@@ -149,6 +149,9 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_mandir}/man1/%{name}.1*
 
 %changelog
+* Sun Nov 15 2026 smsheese <58876239+smsheese@users.noreply.github.com> - 15.1.1
+- Updated README previews for screen recording
+
 * Sun Nov 15 2026 sheesetfs <sheese@tradifyservices.com> - 15.1.0
 - Added AI assistant, screen recording and remote storage
 

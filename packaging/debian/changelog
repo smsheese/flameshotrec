@@ -1,3 +1,9 @@
+flameshot (15.1.1-1) unstable; urgency=medium
+
+  * Update README previews with recording examples and video settings.
+
+ -- smsheese <58876239+smsheese@users.noreply.github.com>  Sun, 15 Nov 2026 23:00:00 +0300
+
 flameshot (15.1.0-1) unstable; urgency=medium
 
   * Release for v15.1.0: AI assistant (flameshot-ai), in-overlay screen

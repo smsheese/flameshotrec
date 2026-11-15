@@ -7,6 +7,13 @@ version numbering. Entries below describe what this fork adds on top of the
 upstream release named in the heading. Upstream's own release notes are in
 `docs/ReleaseNotes_*.md` and are not repeated here.
 
+## [15.1.1] — 2026-11-15
+
+### Documentation
+
+- Replaced the README preview with examples of the recording workflow, its output,
+  and the Video settings. No special upgrade steps are required.
+
 ## [15.1.0] — 2026-11-15
 
 First feature release of `flameshotrec`. Based on upstream Flameshot 15.0.0.

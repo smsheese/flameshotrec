@@ -92,7 +92,17 @@ release notes are in [CHANGELOG.md](CHANGELOG.md).
 
 ## Preview
 
-![image](https://raw.githubusercontent.com/flameshot-org/flameshot/master/data/img/preview/animatedUsage.gif)
+**Recording workflow** — select an area, start recording, and annotate as you go.
+
+![Flameshot recording workflow](data/img/preview/recording-workflow.gif)
+
+**Recorded output** — the video produced from the selected area.
+
+![Example recording output](data/img/preview/recording-output.gif)
+
+**Video settings** — configure the encoder, audio, and annotation timing.
+
+![Flameshot video settings](data/img/preview/video-settings.png)
 
 ## Index
 
