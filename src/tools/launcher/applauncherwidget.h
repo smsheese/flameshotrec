@@ -27,6 +27,7 @@ class AppLauncherWidget : public QWidget
     Q_OBJECT
 public:
     explicit AppLauncherWidget(const QPixmap& p, QWidget* parent = nullptr);
+    explicit AppLauncherWidget(const QString& videoPath, QWidget* parent = nullptr);
 
 private slots:
     void launch(const QModelIndex& index);
@@ -35,6 +36,7 @@ private slots:
 
 private:
     void initListWidget();
+    void initialize();
     void initAppMap();
     void configureListView(QListWidget* widget);
     void addAppsToListWidget(QListWidget* widget,
@@ -47,6 +49,7 @@ private:
     DesktopFileParser m_parser;
 #endif
     QPixmap m_pixmap;
+    QString m_videoPath;
     QTemporaryFile* m_tempFile = nullptr;
     bool m_keepOpen;
     QMap<QString, QVector<DesktopAppData>> m_appsMap;

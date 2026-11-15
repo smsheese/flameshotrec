@@ -11,6 +11,8 @@ Build-Depends:
  qt6-svg-dev (>= 6.2.4~) | libqt6svg6-dev (>= 6.2.4~),
  qt6-l10n-tools (>= 6.2.4~),
  libgl-dev,
+ libx11-dev,
+ libxext-dev,
 Rules-Requires-Root: no
 Standards-Version: 4.7.2
 Homepage: https://flameshot.org/
@@ -22,6 +24,8 @@ Architecture: any
 # Ubuntu noble expanded shlibs are suffixed with t64 for Qt dependencies, later versions of Ubuntu reverted back without suffix so make it future proof
 # ${shlibs:Depends},
 Depends:
+ curl,
+ openssh-client,
  ${misc:Depends},
  libc6 (>= 2.35),
  libgcc-s1 (>= 11),
@@ -34,9 +38,11 @@ Depends:
  libqt6network6 (>= 6.2.4~),
  libqt6widgets6 (>= 6.2.4~),
  libqt6svg6 (>= 6.2.4~),
+ ffmpeg,
 Recommends:
  xdg-desktop-portal-gtk | xdg-desktop-portal-gnome | xdg-desktop-portal-kde | xdg-desktop-portal-wlr,
  grim,
+ pulseaudio-utils,
 Suggests:
  ca-certificates,
  openssl,

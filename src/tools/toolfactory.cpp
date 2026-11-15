@@ -22,6 +22,9 @@
 #include "tools/pixelate/pixelatetool.h"
 #include "tools/rectangle/rectangletool.h"
 #include "tools/redo/redotool.h"
+#ifdef ENABLE_RECORDING
+#include "tools/record/recordtool.h"
+#endif
 #include "tools/save/savetool.h"
 #include "tools/selection/selectiontool.h"
 #include "tools/sizedecrease/sizedecreasetool.h"
@@ -68,6 +71,11 @@ CaptureTool* ToolFactory::CreateTool(CaptureTool::Type t, QObject* parent)
         if_TYPE_return_TOOL(TYPE_INVERT, InvertTool);
         if_TYPE_return_TOOL(TYPE_ACCEPT, AcceptTool);
         if_TYPE_return_TOOL(TYPE_AI, AITool);
+#ifdef ENABLE_RECORDING
+        if_TYPE_return_TOOL(TYPE_RECORD, RecordTool);
+        case CaptureTool::TYPE_RECORD_UPLOAD:
+            return new RecordTool(parent, CaptureTool::TYPE_RECORD_UPLOAD);
+#endif
         default:
             return nullptr;
     }

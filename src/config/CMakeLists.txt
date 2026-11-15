@@ -18,3 +18,7 @@ target_sources(
           uicoloreditor.cpp
           visualseditor.cpp
 )
+
+if(ENABLE_RECORDING)
+  target_sources(flameshot PRIVATE videoconf.cpp)
+endif()

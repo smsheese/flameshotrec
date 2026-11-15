@@ -108,10 +108,17 @@ endif()
 
 add_subdirectory(cli)
 add_subdirectory(config)
+# Remote storage/export is shared by screenshots and recordings, so it is always
+# part of the binary rather than living behind ENABLE_RECORDING.
+add_subdirectory(remote)
 add_subdirectory(core)
 add_subdirectory(utils)
 add_subdirectory(widgets)
 add_subdirectory(tools)
+if(ENABLE_RECORDING)
+    add_subdirectory(recording)
+    target_link_libraries(flameshot flameshot-recording)
+endif()
 
 
 set(FLAMESHOT_TS_FILES

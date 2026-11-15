@@ -23,6 +23,7 @@
 #include <QApplication>
 #include <QBuffer>
 #include <QClipboard>
+#include <QDir>
 #include <QFileDialog>
 #include <QGuiApplication>
 #include <QMessageBox>
@@ -362,6 +363,10 @@ bool saveToFilesystemGUI(const QPixmap& capture)
     bool okay = false;
     ConfigHandler config;
     QString defaultSavePath = ConfigHandler().savePath();
+    if (!QDir().mkpath(defaultSavePath)) {
+        AbstractLogger::error() << QObject::tr("Unable to create screenshot save folder: %1").arg(defaultSavePath);
+        defaultSavePath = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+    }
     if (defaultSavePath.isEmpty() || !QDir(defaultSavePath).exists() ||
         !QFileInfo(defaultSavePath).isWritable()) {
         defaultSavePath =

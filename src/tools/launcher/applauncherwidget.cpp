@@ -24,6 +24,8 @@
 #include <QTabWidget>
 #include <QTemporaryFile>
 
+#include <algorithm>
+
 namespace {
 
 #if defined(Q_OS_WIN)
@@ -47,6 +49,18 @@ QMap<QString, QString> catIconNames(
 AppLauncherWidget::AppLauncherWidget(const QPixmap& p, QWidget* parent)
   : QWidget(parent)
   , m_pixmap(p)
+{
+    initialize();
+}
+
+AppLauncherWidget::AppLauncherWidget(const QString& videoPath, QWidget* parent)
+  : QWidget(parent)
+  , m_videoPath(videoPath)
+{
+    initialize();
+}
+
+void AppLauncherWidget::initialize()
 {
     setAttribute(Qt::WA_DeleteOnClose);
     setWindowIcon(QIcon(GlobalValues::iconPath()));
@@ -110,7 +124,9 @@ AppLauncherWidget::AppLauncherWidget(const QPixmap& p, QWidget* parent)
 
 void AppLauncherWidget::launch(const QModelIndex& index)
 {
-    if (!m_tempFile || !QFileInfo(m_tempFile->fileName()).isReadable()) {
+    QString filePath = m_videoPath;
+    if (filePath.isEmpty() &&
+        (!m_tempFile || !QFileInfo(m_tempFile->fileName()).isReadable())) {
         delete m_tempFile;
         // _XXXXXX is how Qt temporary files are mocked before substitution
         m_tempFile = new QTemporaryFile(QDir::tempPath() + "/" +
@@ -131,10 +147,13 @@ void AppLauncherWidget::launch(const QModelIndex& index)
             return;
         }
     }
+    if (filePath.isEmpty()) {
+        filePath = m_tempFile->fileName();
+    }
     // Heuristically, if there is a % in the command we assume it is the file
     // name slot
     QString command = index.data(Qt::UserRole).toString();
-    const QString tempFilePath = m_tempFile->fileName();
+    const QString tempFilePath = filePath;
 #if defined(Q_OS_WIN)
     // Do not split on Windows, since file path can contain spaces
     // and % is not used in lnk files
@@ -221,6 +240,9 @@ void AppLauncherWidget::initListWidget()
 
     for (auto const& i : catIconNames.toStdMap()) {
         const QString& cat = i.first;
+        if (!m_videoPath.isEmpty() && cat != QLatin1String("Multimedia")) {
+            continue;
+        }
         const QString& iconName = i.second;
 
         if (!m_appsMap.contains(cat)) {
@@ -285,6 +307,18 @@ void AppLauncherWidget::initAppMap()
     }
 
     if (!multimediaList.isEmpty()) {
+        if (!m_videoPath.isEmpty()) {
+            multimediaList.erase(
+              std::remove_if(multimediaList.begin(),
+                             multimediaList.end(),
+                             [](const DesktopAppData& app) {
+                                 return !app.categories.contains(
+                                          QStringLiteral("Video")) &&
+                                        !app.categories.contains(
+                                          QStringLiteral("AudioVideo"));
+                             }),
+              multimediaList.end());
+        }
         m_appsMap.insert(QStringLiteral("Multimedia"), multimediaList);
     }
 }

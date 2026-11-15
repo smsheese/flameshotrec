@@ -73,7 +73,8 @@ public:
     // NOTE: When adding new options, make sure to add an entry in
     // recognizedGeneralOptions in the cpp file.
     CONFIG_GETTER_SETTER(userColors, setUserColors, QVector<QColor>);
-    CONFIG_GETTER_SETTER(savePath, setSavePath, QString)
+    QString savePath();
+    void setSavePath(const QString& path);
     CONFIG_GETTER_SETTER(savePathFixed, setSavePathFixed, bool)
     CONFIG_GETTER_SETTER(uiLanguage, setUiLanguage, QString)
     CONFIG_GETTER_SETTER(uiColor, setUiColor, QColor)
@@ -140,6 +141,42 @@ public:
     CONFIG_GETTER_SETTER(iaDefaultMode, setIaDefaultMode, QString)
     CONFIG_GETTER_SETTER(iaCopyResult, setIaCopyResult, bool)
     CONFIG_GETTER_SETTER(iaShowDialog, setIaShowDialog, bool)
+    CONFIG_GETTER_SETTER(recordingFfmpegPath, setRecordingFfmpegPath, QString)
+    QString recordingVideoPath();
+    void setRecordingVideoPath(const QString& path);
+    QString recordingFilenamePattern();
+    void setRecordingFilenamePattern(const QString& pattern);
+    CONFIG_GETTER_SETTER(recordingFrameRate, setRecordingFrameRate, int)
+    CONFIG_GETTER_SETTER(recordingToolbarInitialized, setRecordingToolbarInitialized, bool)
+    CONFIG_GETTER_SETTER(recordingHoldDuration, setRecordingHoldDuration, int)
+    CONFIG_GETTER_SETTER(recordingFadeDuration, setRecordingFadeDuration, int)
+    CONFIG_GETTER_SETTER(recordingContainer, setRecordingContainer, QString)
+    CONFIG_GETTER_SETTER(recordingCodec, setRecordingCodec, QString)
+    CONFIG_GETTER_SETTER(recordingRateControl, setRecordingRateControl, QString)
+    CONFIG_GETTER_SETTER(recordingBitrateKbps, setRecordingBitrateKbps, int)
+    CONFIG_GETTER_SETTER(recordingQuality, setRecordingQuality, int)
+    // System audio is captured from the default output monitor; the
+    // microphone is opt-in. Empty source names follow the server defaults.
+    CONFIG_GETTER_SETTER(recordingAudioSystemEnabled, setRecordingAudioSystemEnabled, bool)
+    CONFIG_GETTER_SETTER(recordingAudioMicEnabled, setRecordingAudioMicEnabled, bool)
+    CONFIG_GETTER_SETTER(recordingAudioSystemSource, setRecordingAudioSystemSource, QString)
+    CONFIG_GETTER_SETTER(recordingAudioMicSource, setRecordingAudioMicSource, QString)
+    CONFIG_GETTER_SETTER(recordingAudioQuality, setRecordingAudioQuality, QString)
+    CONFIG_GETTER_SETTER(recordingAudioBitrateKbps, setRecordingAudioBitrateKbps, int)
+    CONFIG_GETTER_SETTER(recordingTransferEnabled, setRecordingTransferEnabled, bool)
+    CONFIG_GETTER_SETTER(recordingTransferProtocol, setRecordingTransferProtocol, QString)
+    CONFIG_GETTER_SETTER(recordingTransferHost, setRecordingTransferHost, QString)
+    CONFIG_GETTER_SETTER(recordingTransferPort, setRecordingTransferPort, int)
+    CONFIG_GETTER_SETTER(recordingTransferUser, setRecordingTransferUser, QString)
+    CONFIG_GETTER_SETTER(recordingTransferRemoteDir, setRecordingTransferRemoteDir, QString)
+    CONFIG_GETTER_SETTER(recordingTransferPrivateKey, setRecordingTransferPrivateKey, QString)
+    CONFIG_GETTER_SETTER(recordingTransferKnownHosts, setRecordingTransferKnownHosts, QString)
+    // Remote storage (shared by screenshots and recordings). The values are read
+    // and written through RemoteStorage::ConfigHandlerStore, which uses the
+    // generic value()/setValue() API below together with these registrations.
+    // Keep the legacy `recordingTransfer*` keys above registered: the one-shot
+    // migration in src/remote/remotestorage.cpp reads them and leaves them in
+    // place so an older build still understands the file.
     CONFIG_GETTER_SETTER(buttons, setButtons, QList<CaptureTool::Type>)
     CONFIG_GETTER_SETTER(showMagnifier, setShowMagnifier, bool)
     CONFIG_GETTER_SETTER(squareMagnifier, setSquareMagnifier, bool)
@@ -185,6 +222,9 @@ public:
     QString shortcut(const QString& actionName);
     void setValue(const QString& key, const QVariant& value);
     QVariant value(const QString& key) const;
+    // Whether the key is present in the file, as opposed to having a value that
+    // may legitimately be empty. Used by the remote-storage migration.
+    bool contains(const QString& key) const;
     void remove(const QString& key);
     void resetValue(const QString& key);
 

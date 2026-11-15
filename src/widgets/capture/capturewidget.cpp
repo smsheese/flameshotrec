@@ -10,15 +10,18 @@
 // <http://www.gnu.org/licenses/old-licenses/library.txt>
 
 #include "capturewidget.h"
+#include "recording/annotationpolicy_confighandler.h"
 #include "config/cacheutils.h"
 #include "config/generalconf.h"
 #include "core/flameshot.h"
 #include "core/qguiappcurrentscreen.h"
 #include "tools/copy/copytool.h"
 #include "utils/abstractlogger.h"
+#include "utils/capturegeometry.h"
 #include "utils/screengrabber.h"
 #include "utils/screenshotsaver.h"
 #include "widgets/capture/colorpicker.h"
+#include "widgets/ai/aidialog.h"
 #include "widgets/capture/hovereventfilter.h"
 #include "widgets/capture/modificationcommand.h"
 #include "widgets/capture/notifierbox.h"
@@ -32,18 +35,22 @@
 #include <QCheckBox>
 #include <QDateTime>
 #include <QFontMetrics>
+#include <QHelpEvent>
 #include <QMessageBox>
 #include <QPaintEvent>
 #include <QPainter>
 #include <QScreen>
 #include <QShortcut>
+#include <QToolTip>
 #include <QWindow>
+#include <utility>
 
 #if !defined(DISABLE_UPDATE_CHECKER)
 #include "widgets/updatenotificationwidget.h"
 #endif
 
 #define MOUSE_DISTANCE_TO_START_MOVING 3
+
 
 auto const MOUSE_WHEEL_TRESHOLD = 60;
 
@@ -105,6 +112,11 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
     m_uiColor = m_config.uiColor();
     m_contrastUiColor = m_config.contrastUiColor();
     setMouseTracking(true);
+#ifdef ENABLE_RECORDING
+    setAttribute(Qt::WA_TranslucentBackground);
+    m_videoRefresh.setInterval(16);
+    connect(&m_videoRefresh, &QTimer::timeout, this, &CaptureWidget::refreshRecordingAnnotations);
+#endif
     initContext(fullScreen, req);
 
     ScreenGrabber grabber;
@@ -190,33 +202,43 @@ CaptureWidget::CaptureWidget(const CaptureRequest& req,
         }
 #endif
 
-        // Always display on the selected screen (not spanning entire desktop)
-        if (selectedScreen == nullptr) {
-            selectedScreen = QGuiApplication::primaryScreen();
+        QRect canvas;
+        if (selectedScreen) {
+            canvas = selectedScreen->geometry();
+        } else {
+            for (QScreen* screen : QGuiApplication::screens()) canvas = canvas.united(screen->geometry());
         }
-        QRect screenGeom = selectedScreen->geometry();
-        move(screenGeom.topLeft());
-        resize(screenGeom.size());
+        move(canvas.topLeft());
+        resize(canvas.size());
+        if (selectedScreen && windowHandle()) windowHandle()->setScreen(selectedScreen);
+        // Only the whole-desktop union canvas needs the spanning override in
+        // showEvent(). A per-monitor canvas (--monitor/screen crops, and every
+        // Wayland capture, which stays per-monitor by design) must keep the
+        // plain fullscreen window it always had: replacing the window state
+        // with a client-side geometry request is advisory on Wayland and pulls
+        // the window out of its fullscreen space on macOS.
+        if (!selectedScreen && !DesktopInfo().waylandDetected()) {
+            QList<QRect> screenRects;
+            for (QScreen* screen : QGuiApplication::screens()) {
+                screenRects.append(screen->geometry());
+            }
+            m_spanningCanvas =
+              CaptureGeometry::spansMultipleScreens(screenRects);
+        }
 
-        if (selectedScreen != nullptr && windowHandle()) {
-            windowHandle()->setScreen(selectedScreen);
-        }
 #endif
+        m_desktopCanvas = geometry();
     }
 
     QVector<QRect> areas;
     if (m_context.fullscreen) {
-        // Always display on a single screen, normalized to (0, 0)
-        QScreen* screenForAreas = selectedScreen;
-        if (!screenForAreas) {
-            screenForAreas = QGuiAppCurrentScreen().currentScreen();
+        if (selectedScreen) {
+            QRect r(QPoint(0, 0), selectedScreen->geometry().size());
+            areas.append(r);
+        } else {
+            for (QScreen* screen : QGuiApplication::screens())
+                areas.append(screen->geometry().translated(-pos()));
         }
-        if (!screenForAreas) {
-            screenForAreas = QGuiApplication::primaryScreen();
-        }
-        QRect r = screenForAreas ? screenForAreas->geometry() : QRect();
-        r.moveTo(0, 0);
-        areas.append(r);
     } else {
         areas.append(rect());
     }
@@ -329,6 +351,9 @@ CaptureWidget::~CaptureWidget()
         geometry.setTopLeft(geometry.topLeft() + m_context.widgetOffset);
         Flameshot::instance()->exportCapture(
           pixmap(), geometry, m_context.request);
+    } else if (m_recordingSession) {
+        // Recording owns its output; a hidden editor closing after finalization
+        // must not report a failed screenshot capture.
     } else {
         emit Flameshot::instance()->captureFailed();
     }
@@ -338,6 +363,19 @@ void CaptureWidget::initButtons()
 {
     auto allButtonTypes = CaptureToolButton::getIterableButtonTypes();
     auto visibleButtonTypes = m_config.buttons();
+#ifdef ENABLE_RECORDING
+    // Migrate the old screenshot toolbar once; later user changes are kept.
+    if (!m_config.recordingToolbarInitialized()) {
+        if (!visibleButtonTypes.contains(CaptureTool::TYPE_RECORD))
+            visibleButtonTypes.append(CaptureTool::TYPE_RECORD);
+#ifndef ENABLE_IMGUR
+        if (!visibleButtonTypes.contains(CaptureTool::TYPE_RECORD_UPLOAD))
+            visibleButtonTypes.append(CaptureTool::TYPE_RECORD_UPLOAD);
+#endif
+        m_config.setButtons(visibleButtonTypes);
+        m_config.setRecordingToolbarInitialized(true);
+    }
+#endif
     if ((m_context.request.tasks() == CaptureRequest::NO_TASK) ||
         (m_context.request.tasks() == CaptureRequest::PRINT_GEOMETRY)) {
         allButtonTypes.removeOne(CaptureTool::TYPE_ACCEPT);
@@ -392,6 +430,9 @@ void CaptureWidget::initButtons()
         }
 
         m_tools[t] = b->tool();
+#ifdef ENABLE_RECORDING
+        if (t == CaptureTool::TYPE_RECORD_UPLOAD) b->setEnabled(m_config.recordingTransferEnabled());
+#endif
 
         connect(b->tool(),
                 &CaptureTool::requestAction,
@@ -629,8 +670,91 @@ void CaptureWidget::uncheckActiveTool()
     updateCursor();
 }
 
+void CaptureWidget::showEvent(QShowEvent* showEvent)
+{
+    QWidget::showEvent(showEvent);
+    // `m_spanningCanvas` is set only for the X11 whole-desktop union, i.e. when
+    // the window really has to cover several monitors. Every other capture
+    // (one preselected monitor, Wayland, Windows, macOS) keeps the plain
+    // fullscreen window the platform gave it.
+    if (!m_context.fullscreen || !m_spanningCanvas || m_spanningApplied ||
+        m_desktopCanvas.isNull()) {
+        return;
+    }
+    // Flameshot::gui() asks for a fullscreen window, which the window manager
+    // confines to a single monitor. Reassert the whole-desktop geometry so the
+    // selection can start and end on any monitor, including a monitor with a
+    // negative origin.
+    m_spanningApplied = true;
+    setWindowState(Qt::WindowNoState);
+    setGeometry(m_desktopCanvas);
+    // Some window managers apply the fullscreen state after the window is
+    // mapped; watch our own state so the desktop geometry wins either way.
+    installEventFilter(this);
+    raise();
+    activateWindow();
+}
+
+bool CaptureWidget::event(QEvent* event)
+{
+#ifdef ENABLE_RECORDING
+    if (event->type() == QEvent::ToolTip && m_videoSession) {
+        // A tooltip is a window of its own, drawn wherever the pointer is -- and
+        // while an annotation tool is selected the overlay takes the pointer
+        // inside the recorded region. The encoder therefore captures it and the
+        // text ends up in the video. Nothing on this widget may pop up there
+        // during a recording; the toolbar buttons keep their own tooltips,
+        // which live outside the region by construction.
+        auto* help = static_cast<QHelpEvent*>(event);
+        if (m_videoRegion.contains(help->pos())) {
+            event->accept();
+            QToolTip::hideText();
+            return true;
+        }
+    }
+#endif
+    return QWidget::event(event);
+}
+
+bool CaptureWidget::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == this && event->type() == QEvent::WindowStateChange &&
+        m_spanningCanvas && m_spanningApplied &&
+        (windowState() & Qt::WindowFullScreen)) {
+        // The window manager applied fullscreen late and confined the overlay
+        // to one monitor; restore the whole-desktop canvas. Clearing the state
+        // first keeps this from repeating.
+        setWindowState(Qt::WindowNoState);
+        setGeometry(m_desktopCanvas);
+    }
+#ifdef ENABLE_RECORDING
+    if (m_videoSession) {
+        switch (event->type()) {
+            case QEvent::Show:
+            case QEvent::Hide:
+            case QEvent::Move:
+            case QEvent::Resize:
+                // The overlay controls stay clickable while everything else is
+                // click-through, so the input shape follows them.
+                updateRecordingInput();
+                break;
+            default:
+                break;
+        }
+    }
+#endif
+    return QWidget::eventFilter(watched, event);
+}
+
 void CaptureWidget::closeEvent(QCloseEvent* event)
 {
+#ifdef ENABLE_RECORDING
+    if (m_videoSession) {
+        m_videoRefresh.stop();
+        m_videoSession->cancel();
+        m_recordingSession = true;
+    }
+#endif
 #if !(defined(Q_OS_MACOS) || defined(Q_OS_WIN))
     /* GNOME copy problem workaround, copy
        operation seems to work only when there
@@ -652,6 +776,13 @@ void CaptureWidget::closeEvent(QCloseEvent* event)
             event->ignore();
             m_clipboardWorkaroundDone = true;
             m_context.request.removeTask(CaptureRequest::COPY);
+            // The editor survives this close, so the AI hand-off must not
+            // either: otherwise the next Accept/Copy/Save would export with
+            // CR::AI and consume an answer the user no longer sees (review F7).
+            if (m_context.request.tasks() & CaptureRequest::AI) {
+                m_context.request.removeTask(CaptureRequest::AI);
+                AIDialog::clearPendingAnswer();
+            }
             AbstractLogger::info()
               << "GNOME Wayland detected; keeping capture window alive until "
                  "clipboard data is fetched.";
@@ -671,6 +802,12 @@ void CaptureWidget::paintEvent(QPaintEvent* paintEvent)
     if (!painter.isActive()) {
         return;
     }
+#ifdef ENABLE_RECORDING
+    if (m_videoSession) {
+        paintRecording(painter);
+        return;
+    }
+#endif
     GeneralConf::xywh_position position =
       static_cast<GeneralConf::xywh_position>(m_config.showSelectionGeometry());
     /* QPainter::save and restore is somewhat costly so we try to guess
@@ -882,6 +1019,24 @@ int CaptureWidget::selectToolItemAtPos(const QPoint& pos)
 
 void CaptureWidget::mousePressEvent(QMouseEvent* e)
 {
+#ifdef ENABLE_RECORDING
+    // A session that is still preparing the encoder is not a reason to drop the
+    // user's input: the overlay is live, and an annotation committed before the
+    // encoder accepted its first frame simply starts its hold with the
+    // recording clock (activeMilliseconds() is 0 until then). Swallowing the
+    // press there lost a stroke completely -- no annotation, no commit, no
+    // feedback -- which is exactly what the first pencil stroke hit. Only a
+    // session that is already finishing is done accepting edits.
+    if (m_videoSession) {
+        const Recording::X11RecordingBackend::State recordingState =
+          m_videoSession->state();
+        if (recordingState == Recording::X11RecordingBackend::State::Finalizing ||
+            recordingState == Recording::X11RecordingBackend::State::Finished ||
+            recordingState == Recording::X11RecordingBackend::State::Failed) {
+            return;
+        }
+    }
+#endif
     activateWindow();
     m_startMove = false;
     m_startMovePos = QPoint();
@@ -1401,6 +1556,22 @@ void CaptureWidget::setState(CaptureToolButton* b)
         return;
     }
 
+#ifdef ENABLE_RECORDING
+    if (!m_videoSession && (b->tool()->type() == CaptureTool::TYPE_RECORD_UPLOAD
+#ifdef ENABLE_IMGUR
+        || (b->tool()->type() == CaptureTool::TYPE_IMAGEUPLOADER && m_config.recordingTransferEnabled())
+#endif
+        )) {
+        saveImageForTransfer();
+        return;
+    }
+    if (b->tool()->type() == CaptureTool::TYPE_RECORD) {
+        commitCurrentTool();
+        startRecording();
+        return;
+    }
+    if (m_videoSession && handleRecordingAction(b->tool()->type())) return;
+#endif
     commitCurrentTool();
     if (m_toolWidget && m_activeTool) {
         if (m_activeTool->isValid()) {
@@ -1433,10 +1604,29 @@ void CaptureWidget::setState(CaptureToolButton* b)
             m_activeButton = nullptr;
         }
         m_context.toolSize = ConfigHandler().toolSize(activeButtonToolType());
+#ifdef ENABLE_RECORDING
+        if (m_videoSession) {
+            // The per-tool size the annotation settings expose (pencil stroke,
+            // text font, marker, pixelate block, counter badge) applies to the
+            // recording overlay, which is where a recorded annotation is drawn.
+            // Resolved exactly as the settings labels promise: an unset tool
+            // follows its drawing default.
+            const int resolved = Recording::resolvedDrawingSize(
+              m_videoPolicy, policyToolFor(activeButtonToolType()));
+            if (resolved > 0) {
+                m_context.toolSize = resolved;
+            }
+        }
+#endif
         emit toolSizeChanged(m_context.toolSize);
         updateCursor();
         updateSelectionState();
         updateTool(b->tool());
+#ifdef ENABLE_RECORDING
+        // Switching away from the counter tool ends the group: its bubbles start
+        // their hold now and fade together.
+        enforceCounterGroup();
+#endif
     }
 }
 
@@ -1501,9 +1691,18 @@ void CaptureWidget::handleToolSignal(CaptureTool::Request r)
             } else {
                 QWidget* w = m_activeTool->widget();
                 w->setAttribute(Qt::WA_DeleteOnClose);
+                // The launcher window is an external widget like the AI prompt
+                // and the AI chat, so it has to release the counter it takes:
+                // otherwise externalWindowCount() never returns to zero and
+                // `flameshot gui` could never take its exit path again.
+                QObject::connect(w, &QObject::destroyed,
+                                 Flameshot::instance(), []() {
+                                     Flameshot::instance()
+                                       ->removeExternalWindow();
+                                 });
                 w->activateWindow();
+                Flameshot::instance()->addExternalWindow();
                 w->show();
-                Flameshot::instance()->setExternalWidget(true);
             }
             break;
         case CaptureTool::REQ_INCREASE_TOOL_SIZE:
@@ -1524,6 +1723,11 @@ void CaptureWidget::handleToolSignal(CaptureTool::Request r)
             }
             break;
         }
+#ifdef ENABLE_RECORDING
+        case CaptureTool::REQ_START_RECORDING:
+            startRecording();
+            break;
+#endif
         default:
             break;
     }
@@ -1773,6 +1977,15 @@ void CaptureWidget::updateSizeIndicator()
 
 void CaptureWidget::updateCursor()
 {
+#ifdef ENABLE_RECORDING
+    if (m_videoSession) {
+        // The recorded region cannot be resized while a session runs, so never
+        // show resize cursors there; drawing uses a crosshair.
+        setCursor(m_activeButton != nullptr ? Qt::CrossCursor
+                                           : Qt::ArrowCursor);
+        return;
+    }
+#endif
     if (m_colorPicker && m_colorPicker->isVisible()) {
         setCursor(Qt::ArrowCursor);
     } else if (m_activeButton != nullptr &&
@@ -1790,6 +2003,13 @@ void CaptureWidget::updateCursor()
 
 void CaptureWidget::updateSelectionState()
 {
+#ifdef ENABLE_RECORDING
+    if (m_videoSession) {
+        m_selection->setIgnoreMouse(true);
+        updateRecordingInput();
+        return;
+    }
+#endif
     auto toolType = activeButtonToolType();
     if (toolType == CaptureTool::TYPE_MOVESELECTION) {
         m_selection->setIdleCentralCursor(Qt::OpenHandCursor);
@@ -1856,7 +2076,32 @@ void CaptureWidget::pushToolToStack()
         m_panel->blockSignals(true);
 
         m_captureToolObjectsBackup = m_captureToolObjects;
+        if (qEnvironmentVariableIsSet("FLAMESHOT_DEBUG_ANNOTATIONS")) {
+            qInfo("commit: type %d valid %d edit %d, tool list %lld -> %lld",
+                  int(m_activeTool->type()),
+                  m_activeTool->isValid() ? 1 : 0,
+                  m_activeTool->editMode() ? 1 : 0,
+                  static_cast<long long>(m_captureToolObjects.size()),
+                  static_cast<long long>(m_captureToolObjects.size() + 1));
+        }
         m_captureToolObjects.append(m_activeTool);
+#ifdef ENABLE_RECORDING
+        // The annotation clock starts when the stroke is finished, not when it
+        // was started, and it is keyed by the copy that the overlay paints.
+        if (m_videoSession) {
+            auto committed =
+              m_captureToolObjects.at(m_captureToolObjects.size() - 1);
+            // Invert and pixelate read the desktop on every frame now, so there
+            // is no sample to carry over: the commit only starts the
+            // annotation's clock.
+            stampRecordingAnnotation(committed.data());
+            // A new counter bubble belongs to the group that is still being
+            // drawn, so the group must stay held.
+            enforceCounterGroup();
+            updateAnnotationRefresh();
+            updateRecordingInput();
+        }
+#endif
         pushObjectsStateToUndoStack();
         releaseActiveTool();
         drawToolsData();
@@ -1869,6 +2114,9 @@ void CaptureWidget::pushToolToStack()
 
 void CaptureWidget::drawToolsData(bool drawSelection)
 {
+#ifdef ENABLE_RECORDING
+    if (m_videoSession) { update(); return; }
+#endif
     // TODO refactor this for performance. The objects should not all be updated
     // at once every time
     QPixmap pixmapItem = m_context.origScreenshot;
@@ -1944,6 +2192,13 @@ void CaptureWidget::makeChild(QWidget* w)
 {
     w->setParent(this);
     w->installEventFilter(m_eventFilter);
+#ifdef ENABLE_RECORDING
+    // While recording, the overlay only accepts input on its controls, so any
+    // child that appears or moves has to refresh the X11 input shape.
+    if (m_videoSession) {
+        w->installEventFilter(this);
+    }
+#endif
 }
 
 void CaptureWidget::restoreCircleCountState()
@@ -2002,7 +2257,44 @@ void CaptureWidget::setCaptureToolObjects(
   const CaptureToolObjects& captureToolObjects)
 {
     // Used for undo/redo
+#ifdef ENABLE_RECORDING
+    const auto before = m_captureToolObjects.captureToolObjects();
+#endif
     m_captureToolObjects = captureToolObjects;
+#ifdef ENABLE_RECORDING
+    if (m_videoSession) {
+        // The assignment deep-copies every annotation, so their addresses
+        // change. Carry the whole lifetime record (start, hold, fade, held group
+        // flag) and the last live sample over by position, otherwise every
+        // commit would restart the hold of every annotation that is already on
+        // screen, drop a held counter group, or make an effect annotation
+        // repaint once for no reason.
+        const auto after = m_captureToolObjects.captureToolObjects();
+        const int common = qMin(before.size(), after.size());
+        for (int index = 0; index < common; ++index) {
+            CaptureTool* oldTool = before.at(index).data();
+            CaptureTool* newTool = after.at(index).data();
+            if (!oldTool || !newTool || oldTool == newTool) {
+                continue;
+            }
+            // Only carry over a one-to-one replacement of the same annotation.
+            if (oldTool->type() != newTool->type() ||
+                oldTool->boundingRect() != newTool->boundingRect()) {
+                continue;
+            }
+            const auto lifetime = m_videoLifetimes.constFind(oldTool);
+            if (lifetime != m_videoLifetimes.constEnd()) {
+                m_videoLifetimes.insert(newTool, *lifetime);
+                m_videoLifetimes.remove(oldTool);
+            }
+            const auto sample = m_videoEffectSamples.constFind(oldTool);
+            if (sample != m_videoEffectSamples.constEnd()) {
+                m_videoEffectSamples.insert(newTool, *sample);
+                m_videoEffectSamples.remove(oldTool);
+            }
+        }
+    }
+#endif
     drawToolsData();
     updateLayersPanel();
     drawObjectSelection();

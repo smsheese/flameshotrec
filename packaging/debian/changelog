@@ -1,3 +1,14 @@
+flameshot (15.1.0-1) unstable; urgency=medium
+
+  * Release for v15.1.0: AI assistant (flameshot-ai), in-overlay screen
+    recording with live annotations and PulseAudio/PipeWire audio, and a
+    shared remote storage uploader (FTP, SFTP, SSH, S3-compatible).
+  * Build the Debian package with -DCMAKE_INSTALL_PREFIX=/usr so the
+    desktop entry's Exec line resolves.
+
+ -- sheesetfs <sheese@tradifyservices.com>  Sun, 15 Nov 2026 12:00:00 +0300
+
+
 flameshot (15.0.0-1) unstable; urgency=medium
 
   * Release for v15.0.0

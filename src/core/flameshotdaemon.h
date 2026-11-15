@@ -30,6 +30,13 @@ public:
     static void copyToClipboard(const QPixmap& capture);
     static void copyToClipboard(const QString& text,
                                 const QString& notification = "");
+    // Offers a *local file* on the clipboard (four flavours: uri-list, GNOME
+    // copied-files, KDE cut flag, plain path) through the daemon, so the
+    // selection survives this process exiting -- which on X11 it otherwise does
+    // not. Returns false when no daemon could take it; the caller's own
+    // in-process selection stays valid either way, and this never terminates the
+    // process on a missing session bus.
+    static bool copyFileToClipboard(const QString& path);
     static bool isThisInstanceHostingWidgets();
 
     void sendTrayNotification(
@@ -68,6 +75,7 @@ private:
     void attachScreenshotToClipboard(const QByteArray& screenshot);
     void attachTextToClipboard(const QString& text,
                                const QString& notification);
+    void attachFileToClipboard(const QString& path);
 
     void initTrayIcon();
     void enableTrayIcon(bool enable);

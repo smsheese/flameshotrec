@@ -7,6 +7,8 @@
 #include "config/generalconf.h"
 #include "config/shortcutswidget.h"
 #include "config/visualseditor.h"
+#include "config/videoconf.h"
+#include "remote/remotestorageconf.h"
 #include "utils/colorutils.h"
 #include "utils/confighandler.h"
 #include "utils/globalvalues.h"
@@ -19,6 +21,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QSizePolicy>
+#include <QScrollArea>
 #include <QTabBar>
 #include <QTextStream>
 #include <QVBoxLayout>
@@ -61,6 +64,33 @@ ConfigWindow::ConfigWindow(QWidget* parent)
     generalConfigLayout->addWidget(m_generalConfig);
     m_tabWidget->addTab(
       m_generalConfigTab, QIcon(modifier + "config.svg"), tr("General"));
+
+#ifdef ENABLE_RECORDING
+    m_video = new VideoConf();
+    m_videoTab = new QWidget();
+    auto* videoLayout = new QVBoxLayout(m_videoTab);
+    auto* videoScroll = new QScrollArea(m_videoTab);
+    videoScroll->setWidgetResizable(true);
+    videoScroll->setWidget(m_video);
+    videoLayout->addWidget(videoScroll);
+    m_tabWidget->addTab(m_videoTab, QIcon(modifier + "graphics.svg"), tr("Video"));
+    connect(this, &ConfigWindow::updateChildren, m_video, &VideoConf::updateComponents);
+#endif
+
+    // Remote storage: shared by screenshots and recordings. The FTP/SFTP options
+    // that used to live in the Video tab are here now.
+    m_remoteStorage = new RemoteStorage::RemoteStorageConf();
+    m_remoteStorageTab = new QWidget();
+    auto* remoteStorageLayout = new QVBoxLayout(m_remoteStorageTab);
+    m_remoteStorageTab->setLayout(remoteStorageLayout);
+    remoteStorageLayout->addWidget(m_remoteStorage);
+    m_tabWidget->addTab(m_remoteStorageTab,
+                        QIcon(modifier + "cloud-upload.svg"),
+                        tr("Remote Storage"));
+    connect(this,
+            &ConfigWindow::updateChildren,
+            m_remoteStorage,
+            &RemoteStorage::RemoteStorageConf::updateComponents);
 
     // visuals
     m_visuals = new VisualsEditor();
@@ -108,6 +138,7 @@ ConfigWindow::ConfigWindow(QWidget* parent)
     initErrorIndicator(m_visualsTab, m_visuals);
     initErrorIndicator(m_filenameEditorTab, m_filenameEditor);
     initErrorIndicator(m_generalConfigTab, m_generalConfig);
+    initErrorIndicator(m_remoteStorageTab, m_remoteStorage);
     initErrorIndicator(m_shortcutsTab, m_shortcuts);
 }
 

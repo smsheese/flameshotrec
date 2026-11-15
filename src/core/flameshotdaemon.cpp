@@ -5,12 +5,14 @@
 #include "utils/confighandler.h"
 #include "utils/globalvalues.h"
 #include "utils/screenshotsaver.h"
+#include "utils/filemimedata.h"
 #include "widgets/capture/capturewidget.h"
 #include "widgets/trayicon.h"
 
 #include <QApplication>
 #include <QClipboard>
 #include <QIODevice>
+#include <QMimeData>
 #include <QPixmap>
 #include <QRect>
 
@@ -204,6 +206,58 @@ void FlameshotDaemon::copyToClipboard(const QString& text,
 }
 
 /**
+ * @brief Offers a local file on the clipboard through the daemon.
+ *
+ * A file that is copied to the clipboard has to be pasted *after* the capture
+ * process is gone, and on X11 the selection dies with the process that owns it.
+ * Handing the path to the daemon is what makes "copy recording" actually paste
+ * a video instead of nothing.
+ *
+ * Unlike the screenshot and text flavours this one must not end the process when
+ * no daemon can be reached: the caller has already put the same file on its own
+ * clipboard, so the copy still works for as long as that process lives, and
+ * failing to hand it over is not a reason to abort a recording that is done.
+ * Returns whether a daemon accepted it.
+ */
+bool FlameshotDaemon::copyFileToClipboard(const QString& path)
+{
+    if (instance()) {
+        instance()->attachFileToClipboard(path);
+        return true;
+    }
+
+#if defined(USE_KDSINGLEAPPLICATION) &&                                        \
+  (defined(Q_OS_MACOS) || defined(Q_OS_WIN))
+    auto kdsa = KDSingleApplication(QStringLiteral("org.flameshot.Flameshot"));
+    QByteArray data;
+    QDataStream stream(&data, QIODevice::WriteOnly);
+    stream << QStringLiteral("attachFileToClipboard") << path;
+    kdsa.sendMessage(data);
+    return true;
+#else
+    QDBusConnection sessionBus = QDBusConnection::sessionBus();
+    if (!sessionBus.isConnected()) {
+        // No bus, no daemon. Deliberately silent about the app's exit code: the
+        // in-process selection is still valid.
+        qWarning() << "Flameshot: no session bus, so the clipboard daemon "
+                      "cannot keep the copied file offered after this "
+                      "process exits";
+        return false;
+    }
+    auto m = createMethodCall(QStringLiteral("attachFileToClipboard"));
+    m << path;
+    const QDBusMessage reply = sessionBus.call(m);
+    if (reply.type() == QDBusMessage::ErrorMessage) {
+        qWarning() << "Flameshot: the clipboard daemon did not take the copied "
+                      "file:"
+                   << reply.errorMessage();
+        return false;
+    }
+    return true;
+#endif
+}
+
+/**
  * @brief Is this instance of flameshot hosting any windows as a daemon?
  */
 bool FlameshotDaemon::isThisInstanceHostingWidgets()
@@ -385,6 +439,30 @@ void FlameshotDaemon::attachTextToClipboard(const QString& text,
     clipboard->blockSignals(false);
 }
 
+void FlameshotDaemon::attachFileToClipboard(const QString& path)
+{
+    QMimeData* data = FileMimeData::forLocalFile(path);
+    if (data == nullptr) {
+        // A directory, a vanished file or an empty one is refused here as well
+        // as in the capture process: offering it would paste nothing.
+        qWarning() << "Flameshot: refusing to put a missing or empty file on "
+                      "the clipboard:"
+                   << path;
+        return;
+    }
+
+    // Holding the clipboard keeps the daemon alive: quitIfIdle() only returns to
+    // an exit path once another application has taken the selection (the
+    // dataChanged handler below), so the data owner is never terminated while it
+    // still owns it.
+    m_hostingClipboard = true;
+    QClipboard* clipboard = QApplication::clipboard();
+    clipboard->blockSignals(true);
+    m_clipboardSignalBlocked = true;
+    clipboard->setMimeData(data);
+    clipboard->blockSignals(false);
+}
+
 void FlameshotDaemon::initTrayIcon()
 {
     if (!ConfigHandler().disabledTrayIcon()) {
@@ -526,6 +604,15 @@ void FlameshotDaemon::messageReceivedFromSecondaryInstance(
         } else {
             qWarning() << "Received \"attachTextToClipboard\" from second "
                           "instance, but text is empty!";
+        }
+    } else if (methodCall == QStringLiteral("attachFileToClipboard")) {
+        QString path;
+        stream >> path;
+        if (!path.isEmpty()) {
+            FlameshotDaemon::instance()->attachFileToClipboard(path);
+        } else {
+            qWarning() << "Received \"attachFileToClipboard\" from second "
+                          "instance, but the path is empty!";
         }
     } else {
         qWarning() << "Received unknown message from second instance:"

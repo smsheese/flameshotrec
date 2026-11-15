@@ -16,6 +16,10 @@ AIDialog::AIDialog(const QString& defaultMode,
 {
     setWindowTitle(tr("AI Assistant"));
     setMinimumWidth(480);
+    // The capture editor is an always-on-top frameless tool window, so being a
+    // transient child of it is not enough to guarantee stacking: ask for the
+    // same stacking class as the overlay and let the caller raise/activate.
+    setWindowFlag(Qt::WindowStaysOnTopHint, true);
 
     m_presets = {
       { "ask", tr("Ask"), tr("Type your question about the capture...") },
@@ -93,4 +97,42 @@ QString AIDialog::mode() const
 QString AIDialog::prompt() const
 {
     return m_promptEdit->toPlainText().trimmed();
+}
+
+namespace {
+
+QString& storedMode()
+{
+    static QString mode;
+    return mode;
+}
+
+QString& storedPrompt()
+{
+    static QString prompt;
+    return prompt;
+}
+
+} // namespace
+
+void AIDialog::setPendingAnswer(const AIDialog& answeredDialog)
+{
+    storedMode() = answeredDialog.mode();
+    storedPrompt() = answeredDialog.prompt();
+}
+
+QString AIDialog::pendingAnswerMode()
+{
+    return storedMode();
+}
+
+QString AIDialog::pendingAnswerPrompt()
+{
+    return storedPrompt();
+}
+
+void AIDialog::clearPendingAnswer()
+{
+    storedMode().clear();
+    storedPrompt().clear();
 }

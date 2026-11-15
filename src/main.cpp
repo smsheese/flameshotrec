@@ -75,7 +75,7 @@ int requestCaptureAndWait(const CaptureRequest& req)
         }
 #else
         // if this instance is not daemon, make sure it exit after caputre finish
-        if (FlameshotDaemon::instance() == nullptr && !Flameshot::instance()->haveExternalWidget()) {
+        if (Flameshot::instance()->shouldExitAfterCapture()) {
             qApp->exit(E_OK);
         }
 #endif

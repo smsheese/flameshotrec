@@ -19,5 +19,7 @@ public slots:
     Q_NOREPLY void attachScreenshotToClipboard(const QByteArray& data);
     Q_NOREPLY void attachTextToClipboard(const QString& text,
                                          const QString& notification);
+    // Keeps a copied recording file offered after the capture process exits.
+    Q_NOREPLY void attachFileToClipboard(const QString& path);
     Q_NOREPLY void attachPin(const QByteArray& data);
 };

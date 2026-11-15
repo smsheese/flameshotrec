@@ -43,6 +43,21 @@ bool verifyLaunchFile()
     return res;
 }
 
+QString ConfigHandler::savePath()
+{
+    // Inspect the stored value directly: ExistingDir's generic fallback is
+    // Pictures, while the application default is the dedicated subfolder.
+    const QString configured = m_settings.value(QStringLiteral("savePath")).toString();
+    return configured.isEmpty()
+      ? QDir::home().filePath(QStringLiteral("Pictures/flameshot"))
+      : configured;
+}
+
+void ConfigHandler::setSavePath(const QString& path)
+{
+    setValue(QStringLiteral("savePath"), path);
+}
+
 // VALUE HANDLING
 
 /**
@@ -58,6 +73,23 @@ bool verifyLaunchFile()
     {                                                                          \
         QStringLiteral(KEY), QSharedPointer<ValueHandler>(new TYPE)            \
     }
+
+// Annotation sizes accept -1 ("inherit") or 1..50, exactly like
+// Recording::AnnotationPolicy::isValidSize(). A plain BoundedInt would also
+// accept 0, which the policy rejects: the UI would then silently snap back and a
+// hand-edited 0 would raise no configuration error.
+class AnnotationSize : public ValueHandler
+{
+public:
+    bool check(const QVariant& val) override
+    {
+        bool ok = false;
+        const int value = val.toInt(&ok);
+        return ok && (value == -1 || (value >= 1 && value <= 50));
+    }
+    QVariant fallback() override { return -1; }
+    QString expected() override { return QStringLiteral("-1 (inherit) or 1-50"); }
+};
 
 #define SHORTCUT(NAME, DEFAULT_VALUE)                                          \
     {                                                                          \
@@ -147,6 +179,105 @@ static QMap<class QString, QSharedPointer<ValueHandler>>
     OPTION("iaDefaultMode"               ,String             ( "ask"         )),
     OPTION("iaCopyResult"                ,Bool               ( true          )),
     OPTION("iaShowDialog"                ,Bool               ( true          )),
+    OPTION("recordingFfmpegPath"         ,String             ( ""            )),
+    OPTION("recordingVideoPath"          ,String             ( ""            )),
+    OPTION("recordingFilenamePattern"    ,FilenamePattern    ( {}            )),
+    OPTION("recordingFrameRate"          ,BoundedInt         ( 1, 120, 30    )),
+    OPTION("recordingToolbarInitialized",Bool               ( false         )),
+    OPTION("recordingHoldDuration"       ,BoundedInt         ( 0, 30000, 3000)),
+    OPTION("recordingFadeDuration"       ,BoundedInt         ( 0, 10000, 300 )),
+    OPTION("recordingContainer"          ,String             ( "mp4"         )),
+    OPTION("recordingCodec"              ,String             ( "libx264"     )),
+    OPTION("recordingRateControl"        ,String             ( "crf"         )),
+    OPTION("recordingBitrateKbps"        ,BoundedInt         ( 100, 100000, 4000)),
+    OPTION("recordingQuality"            ,BoundedInt         ( 0, 63, 23    )),
+    OPTION("recordingAudioSystemEnabled" ,Bool               ( true          )),
+    OPTION("recordingAudioMicEnabled"    ,Bool               ( false         )),
+    OPTION("recordingAudioSystemSource"  ,String             ( ""            )),
+    OPTION("recordingAudioMicSource"     ,String             ( ""            )),
+    OPTION("recordingAudioQuality"       ,String             ( "high"        )),
+    OPTION("recordingAudioBitrateKbps"   ,BoundedInt         ( 32, 512, 128  )),
+    OPTION("recordingTransferEnabled"     ,Bool               ( false       )),
+    OPTION("recordingTransferProtocol"    ,String             ( "sftp"      )),
+    OPTION("recordingTransferHost"        ,String             ( ""          )),
+    OPTION("recordingTransferPort"        ,BoundedInt         ( 0, 65535, 0 )),
+    OPTION("recordingTransferUser"        ,String             ( ""          )),
+    OPTION("recordingTransferRemoteDir"   ,String             ( "/"         )),
+    OPTION("recordingTransferPrivateKey"  ,String             ( ""          )),
+    OPTION("recordingTransferKnownHosts"  ,String             ( ""          )),
+    // Remote storage (shared by screenshots and recordings). The transport and
+    // signing code lives in src/remote/; these entries are the only place its
+    // keys and defaults are registered.
+    OPTION("remoteStorageEnabled"        ,Bool               ( false       )),
+    OPTION("remoteStorageProtocol"       ,String             ( "sftp"      )),
+    OPTION("remoteStorageHost"           ,String             ( ""          )),
+    OPTION("remoteStoragePort"           ,BoundedInt         ( 0, 65535, 0 )),
+    OPTION("remoteStorageUser"           ,String             ( ""          )),
+    OPTION("remoteStoragePrivateKey"     ,String             ( ""          )),
+    OPTION("remoteStorageKnownHosts"     ,String             ( ""          )),
+    OPTION("remoteStorageRemoteDir"      ,String             ( "/"         )),
+    OPTION("remoteStorageAcceptInsecureFtp",Bool             ( false       )),
+    OPTION("remoteStorageSecretSource"   ,String             ( "prompt"    )),
+    OPTION("remoteStorageMigrationVersion",BoundedInt        ( 0, 100, 0   )),
+    OPTION("remoteStorageS3Endpoint"     ,String             ( ""          )),
+    OPTION("remoteStorageS3Region"       ,String             ( "us-east-1" )),
+    OPTION("remoteStorageS3Bucket"       ,String             ( ""          )),
+    OPTION("remoteStorageS3KeyPrefix"    ,String             ( ""          )),
+    OPTION("remoteStorageS3AccessKey"    ,String             ( ""          )),
+    OPTION("remoteStorageImageMode"      ,String             ( "original"  )),
+    OPTION("remoteStorageImageDir"       ,String             ( ""          )),
+    OPTION("remoteStorageImageFormat"    ,String             ( ""          )),
+    OPTION("remoteStorageImageQuality"   ,BoundedInt         ( 0, 100, 90  )),
+    OPTION("remoteStorageImageCompression",BoundedInt        ( -1, 9, -1   )),
+    OPTION("remoteStorageVideoMode"      ,String             ( "original"  )),
+    OPTION("remoteStorageVideoDir"       ,String             ( ""          )),
+    OPTION("remoteStorageVideoContainer" ,String             ( "mp4"       )),
+    OPTION("remoteStorageVideoCodec"     ,String             ( "libx264"   )),
+    OPTION("remoteStorageVideoRateControl",String            ( "crf"       )),
+    OPTION("remoteStorageVideoQuality"   ,BoundedInt         ( 0, 63, 23   )),
+    OPTION("remoteStorageVideoBitrateKbps",BoundedInt        ( 100, 100000, 4000)),
+    OPTION("remoteStorageVideoAudioMode" ,String             ( "copy"      )),
+    OPTION("remoteStorageVideoAudioCodec",String             ( "auto"      )),
+    OPTION("remoteStorageVideoAudioBitrateKbps",BoundedInt   ( 32, 512, 128)),
+    // Recording annotations: per-tool lifetime and size. `-1` means "inherit",
+    // so a user who never opens the section keeps the recording-wide
+    // recordingHoldDuration / recordingFadeDuration above and the drawing
+    // tool's own size (drawThickness, drawFontSize, drawMarkerSize,
+    // drawPixelateSize, drawCircleCounterSize). Keep these keys stable: they are
+    // on-disk data.
+    OPTION("annotationPenHoldMs"              ,BoundedInt        ( -1, 30000, -1)),
+    OPTION("annotationPenFadeMs"              ,BoundedInt        ( -1, 10000, -1)),
+    OPTION("annotationPenSize"                ,AnnotationSize     (            )),
+    OPTION("annotationLineHoldMs"             ,BoundedInt        ( -1, 30000, -1)),
+    OPTION("annotationLineFadeMs"             ,BoundedInt        ( -1, 10000, -1)),
+    OPTION("annotationLineSize"               ,AnnotationSize     (            )),
+    OPTION("annotationArrowHoldMs"            ,BoundedInt        ( -1, 30000, -1)),
+    OPTION("annotationArrowFadeMs"            ,BoundedInt        ( -1, 10000, -1)),
+    OPTION("annotationArrowSize"              ,AnnotationSize     (            )),
+    OPTION("annotationBoxHoldMs"              ,BoundedInt        ( -1, 30000, -1)),
+    OPTION("annotationBoxFadeMs"              ,BoundedInt        ( -1, 10000, -1)),
+    OPTION("annotationBoxSize"                ,AnnotationSize     (            )),
+    OPTION("annotationCircleHoldMs"           ,BoundedInt        ( -1, 30000, -1)),
+    OPTION("annotationCircleFadeMs"           ,BoundedInt        ( -1, 10000, -1)),
+    OPTION("annotationCircleSize"             ,AnnotationSize     (            )),
+    OPTION("annotationMarkerHoldMs"           ,BoundedInt        ( -1, 30000, -1)),
+    OPTION("annotationMarkerFadeMs"           ,BoundedInt        ( -1, 10000, -1)),
+    OPTION("annotationMarkerSize"             ,AnnotationSize     (            )),
+    OPTION("annotationTextHoldMs"             ,BoundedInt        ( -1, 30000, -1)),
+    OPTION("annotationTextFadeMs"             ,BoundedInt        ( -1, 10000, -1)),
+    OPTION("annotationTextSize"               ,AnnotationSize     (            )),
+    OPTION("annotationSelectionHoldMs"        ,BoundedInt        ( -1, 30000, -1)),
+    OPTION("annotationSelectionFadeMs"        ,BoundedInt        ( -1, 10000, -1)),
+    OPTION("annotationSelectionSize"          ,AnnotationSize     (            )),
+    OPTION("annotationCounterHoldMs"          ,BoundedInt        ( -1, 30000, -1)),
+    OPTION("annotationCounterFadeMs"          ,BoundedInt        ( -1, 10000, -1)),
+    OPTION("annotationCounterSize"            ,AnnotationSize     (            )),
+    OPTION("annotationInvertHoldMs"           ,BoundedInt        ( -1, 30000, -1)),
+    OPTION("annotationInvertFadeMs"           ,BoundedInt        ( -1, 10000, -1)),
+    OPTION("annotationPixelateHoldMs"         ,BoundedInt        ( -1, 30000, -1)),
+    OPTION("annotationPixelateFadeMs"         ,BoundedInt        ( -1, 10000, -1)),
+    OPTION("annotationPixelateSize"           ,AnnotationSize     (            )),
+    OPTION("annotationCounterMode"            ,String             ( "hold-until-tool-change" )),
 #if defined(Q_OS_WIN)
     // Not visible on settings dialog
     OPTION("ignorePrntScrForcesSnipping" ,Bool               ( false         )),
@@ -159,7 +290,7 @@ static QMap<class QString, QSharedPointer<ValueHandler>>
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
     // Bypass freedesktop portal and use Qt's native X11
     // screenshot method. Intended for WMs without xdg-desktop-portal.
-    OPTION("useX11LegacyScreenshot"      ,Bool               ( false         )),
+    OPTION("useX11LegacyScreenshot"      ,Bool               ( true          )),
 #endif
 };
 
@@ -179,6 +310,8 @@ static QMap<QString, QSharedPointer<KeySequence>> recognizedShortcuts = {
     SHORTCUT("TYPE_ACCEPT"              ,   "Return"                ),
     SHORTCUT("TYPE_EXIT"                ,   "Ctrl+Q"                ),
     SHORTCUT("TYPE_CANCEL"              ,   "Ctrl+Backspace"        ),
+    SHORTCUT("TYPE_RECORD"              ,                           ),
+    SHORTCUT("TYPE_RECORD_UPLOAD"       ,                           ),
 #ifdef ENABLE_IMGUR
     SHORTCUT("TYPE_IMAGEUPLOADER"       ,                           ),
 #endif
@@ -216,6 +349,7 @@ static QMap<QString, QSharedPointer<KeySequence>> recognizedShortcuts = {
     SHORTCUT("TYPE_DELETE_CURRENT_TOOL" ,   "Delete"                ),
 #endif
     SHORTCUT("TYPE_PIN"                 ,                           ),
+    SHORTCUT("TYPE_CLOSE_ACTIVE_PIN_WINDOW",  "Ctrl+Q"                ),
     SHORTCUT("TYPE_AI"                  ,   "Ctrl+I"                ),
     SHORTCUT("TYPE_SIZEINCREASE"        ,                           ),
     SHORTCUT("TYPE_SIZEDECREASE"        ,                           ),
@@ -417,6 +551,30 @@ QString ConfigHandler::filenamePatternDefault()
     return QStringLiteral("%F_%H-%M");
 }
 
+QString ConfigHandler::recordingVideoPath()
+{
+    const QString configured = value(QStringLiteral("recordingVideoPath")).toString();
+    return configured.isEmpty()
+      ? QDir::home().filePath(QStringLiteral("Videos/flameshot"))
+      : configured;
+}
+
+void ConfigHandler::setRecordingVideoPath(const QString& path)
+{
+    setValue(QStringLiteral("recordingVideoPath"), path);
+}
+
+QString ConfigHandler::recordingFilenamePattern()
+{
+    const QString configured = value(QStringLiteral("recordingFilenamePattern")).toString();
+    return configured.isEmpty() ? filenamePatternDefault() : configured;
+}
+
+void ConfigHandler::setRecordingFilenamePattern(const QString& pattern)
+{
+    setValue(QStringLiteral("recordingFilenamePattern"), pattern);
+}
+
 void ConfigHandler::setDefaultSettings()
 {
     for (const auto& key : m_settings.allKeys()) {
@@ -532,6 +690,12 @@ QVariant ConfigHandler::value(const QString& key) const
     }
 
     return handler->value(val);
+}
+
+bool ConfigHandler::contains(const QString& key) const
+{
+    assertKeyRecognized(key);
+    return m_settings.contains(key);
 }
 
 void ConfigHandler::remove(const QString& key)

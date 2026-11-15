@@ -52,6 +52,8 @@ public:
         TYPE_ACCEPT = 23,
         TYPE_CANCEL = 24,
         TYPE_AI = 25,
+        TYPE_RECORD = 26,
+        TYPE_RECORD_UPLOAD = 27,
     };
     Q_ENUM(Type);
 
@@ -83,7 +85,8 @@ public:
         // decrease tool size for all tools
         REQ_DECREASE_TOOL_SIZE,
         // Commit the active tool.
-        REQ_COMMIT_CURRENT_TOOL
+        REQ_COMMIT_CURRENT_TOOL,
+        REQ_START_RECORDING
     };
 
     explicit CaptureTool(QObject* parent = nullptr)

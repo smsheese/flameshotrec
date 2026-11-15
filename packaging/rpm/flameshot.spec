@@ -1,5 +1,5 @@
 Name:    flameshot
-Version: 15.0.0
+Version: 15.1.0
 Release: 1%{?dist}
 Summary: Powerful yet simple to use screenshot software
 
@@ -12,6 +12,8 @@ BuildRequires: git
 BuildRequires: cmake
 BuildRequires: desktop-file-utils
 BuildRequires: jdupes
+BuildRequires: pkgconfig(x11)
+BuildRequires: pkgconfig(xext)
 
 %if 0%{?suse_version}
 BuildRequires: gcc15-c++
@@ -40,6 +42,9 @@ BuildRequires:  kf6-kguiaddons-devel >= 6.7.0
 %endif
 
 Requires: hicolor-icon-theme
+Requires: ffmpeg
+Requires: /usr/bin/curl
+Requires: /usr/bin/sftp
 
 %if 0%{?suse_version}
 Requires: qt6-svg
@@ -144,6 +149,9 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/*.desktop
 %{_mandir}/man1/%{name}.1*
 
 %changelog
+* Sun Nov 15 2026 sheesetfs <sheese@tradifyservices.com> - 15.1.0
+- Added AI assistant, screen recording and remote storage
+
 * Sun Nov 01 2026 Jeremy Borgman <borgman.jeremy@pm.me> - 15.0.0
 - Updated for v15.0.0 release
 

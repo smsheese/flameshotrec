@@ -154,6 +154,10 @@ static std::map<CaptureTool::Type, int> buttonTypeOrder
       { CaptureTool::TYPE_SIZEINCREASE, 22 },
       { CaptureTool::TYPE_SIZEDECREASE, 23 },
       { CaptureTool::TYPE_AI, 24 },
+#ifdef ENABLE_RECORDING
+      { CaptureTool::TYPE_RECORD, 25 },
+      { CaptureTool::TYPE_RECORD_UPLOAD, 26 },
+#endif
 };
 
 int CaptureToolButton::getPriorityByButton(CaptureTool::Type b)
@@ -182,4 +186,8 @@ QList<CaptureTool::Type> CaptureToolButton::iterableButtonTypes = {
     CaptureTool::TYPE_PIN,           CaptureTool::TYPE_AI,
     CaptureTool::TYPE_SIZEINCREASE,  CaptureTool::TYPE_SIZEDECREASE,
     CaptureTool::TYPE_ACCEPT,
+#ifdef ENABLE_RECORDING
+    CaptureTool::TYPE_RECORD,
+    CaptureTool::TYPE_RECORD_UPLOAD,
+#endif
 };

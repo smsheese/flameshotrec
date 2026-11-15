@@ -67,8 +67,17 @@ public slots:
 public:
     static void setOrigin(Origin origin);
     static Origin origin();
-    void setExternalWidget(bool b);
-    bool haveExternalWidget();
+    // Windows this process owns that must outlive a capture: the AI prompt and
+    // the AI chat windows. Counted, not a flag, because several can be open at
+    // once and closing one must not declare the others gone.
+    void addExternalWindow();
+    void removeExternalWindow();
+    int externalWindowCount() const;
+    bool haveExternalWidget() const;
+    // Whether finishing a capture means this process has nothing left to show.
+    // `flameshot gui` exits on it; keeping it a named predicate makes the rule
+    // testable without running main() (see tests/ai).
+    bool shouldExitAfterCapture() const;
 
 signals:
     void captureTaken(QPixmap p);
@@ -87,7 +96,7 @@ private:
 
     // class members
     static Origin m_origin;
-    bool m_haveExternalWidget;
+    int m_externalWidgets;
 
     QPointer<CaptureWidget> m_captureWindow;
     QPointer<InfoWindow> m_infoWindow;

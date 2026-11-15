@@ -33,6 +33,12 @@ public:
     void setIgnoreMouse(bool ignore);
     void setIdleCentralCursor(const QCursor& cursor);
 
+    // While recording, the border and handles must stay out of the encoded
+    // video: the widget then paints nothing and CaptureWidget draws the
+    // boundary just outside the recorded region instead.
+    void setRecordingFrame(bool active);
+    bool recordingFrame() const { return m_recordingFrame; }
+
     void setGeometryAnimated(const QRect& r);
     void setGeometry(const QRect& r);
     QRect geometry() const;
@@ -92,6 +98,7 @@ private:
     SideType m_activeSide;
     QCursor m_idleCentralCursor;
     bool m_ignoreMouse;
+    bool m_recordingFrame{ false };
     bool m_mouseStartMove;
     float m_aspectRatio;
 

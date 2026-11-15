@@ -47,7 +47,48 @@
   </p>
 </div>
 
+> **This repository is `flameshotrec`, a fork of
+> [flameshot-org/flameshot](https://github.com/flameshot-org/flameshot).**
+> It keeps upstream Flameshot's screenshot features and adds three things:
+> the AI assistant from
+> [agarnung/flameshot-ai](https://github.com/agarnung/flameshot-ai),
+> in-overlay screen recording, and one remote-storage uploader shared by
+> screenshots and recordings.
+>
+> Every badge, download link and package below — Snap, Flathub, the distro
+> repositories, the release page — is **upstream Flameshot** and does **not**
+> contain these additions. Build from this repository, or use the packages
+> published from it, to get the recorder.
 
+### What's new in v15.1.0
+
+- **Record the region you selected.** The record dot turns the capture selection
+  live inside the normal overlay: record, pause, resume, then Save, Cancel, Open
+  With, Cloud, or Copy. The selection border is drawn outside the recorded area,
+  so it stays out of the video.
+- **System audio on, microphone opt-in.** Both take a chosen PulseAudio/PipeWire
+  device and an audio quality setting, and a paused recording contains no audio
+  gap instead of a silent one.
+- **Annotations over the live desktop.** Invert and pixelate read live pixels;
+  marks hold, fade and expire on their own; the circle counter can hold until you
+  switch tools. Hold and fade times are configurable globally and per tool.
+- **Multi-monitor aware.** Start and end the selection on any monitor, including
+  one placed left of or above the primary display.
+- **Remote storage for both media kinds.** FTP, SFTP, SSH and S3-compatible, with
+  a separate remote path and conversion profile for screenshots and for videos.
+- **AI assistance** from [flameshot-ai](https://github.com/agarnung/flameshot-ai):
+  Ask, Translate and Explain any capture, through any OpenAI-compatible chat
+  completions endpoint (URL, token and model are settings).
+- **Defaults** that need no setup: images to `~/Pictures/flameshot`, videos to
+  `~/Videos/flameshot`, and FFmpeg auto-detected from `PATH` and common install
+  locations.
+
+Start with **Configuration → Video** (FFmpeg, save folder, container/encoder,
+frame rate, audio devices and quality, annotation timing) and
+**Configuration → Remote Storage** (connection and the per-media profiles). The
+full behaviour, including the X11 compositing requirement, the invert caveat and
+the Wayland status, is in [docs/screen-recording.md](docs/screen-recording.md);
+release notes are in [CHANGELOG.md](CHANGELOG.md).
 
 ## Preview
 
@@ -55,7 +96,12 @@
 
 ## Index
 
+- [What's new in v15.1.0](#whats-new-in-v1510)
 - [Features](#features)
+  - [AI assistance](#ai-assistance)
+  - [Screen recording](#screen-recording)
+  - [Remote storage](#remote-storage)
+  - [Screenshot features](#screenshot-features)
 - [Usage](#usage)
   - [Usage on Windows](#usage-on-windows)
   - [Usage on Hyprland / Sway / wlroots](#usage-on-hyprland--sway--wlroots)
@@ -71,6 +117,7 @@
     - [On Fluxbox](#on-fluxbox)
 - [Considerations](#considerations)
 - [Installation](#installation)
+  - [Builds from this fork](#builds-from-this-fork)
   - [Prebuilt Packages](#prebuilt-packages)
   - [Packages from Repository](#packages-from-repository)
   - [MacOS](#macos)
@@ -95,7 +142,78 @@
 
 ### AI assistance
 
-The AI features from [flameshot-ai](https://github.com/agarnung/flameshot-ai) add an AI button to the screenshot toolbar. You can ask a vision model questions about a capture, translate visible text, or request an explanation in a native dialog. Configure an OpenAI-compatible vision endpoint and enable the feature in the application settings.
+The AI features from [flameshot-ai](https://github.com/agarnung/flameshot-ai) add
+an AI button to the screenshot toolbar, with three modes: **Ask** a question
+about the capture, **Translate** the visible text, and **Explain** what it shows.
+
+- Works with any OpenAI-compatible `chat/completions` endpoint: set the API URL,
+  the bearer token and the model name in
+  **Configuration → General → AI Integration**.
+- An optional dialog lets you pick the mode and type a prompt before sending; a
+  default mode can be used instead. The text result can be copied to the
+  clipboard when the chat window closes.
+- The button and backend are off until enabled. The token is stored in the
+  configuration file, so keep that file private.
+- This targets OpenAI-compatible endpoints with image input. It is not a client
+  for every OpenAI product, and non-compatible APIs are out of scope.
+
+### Screen recording
+
+Select an area in the normal capture window, then choose the record dot. The
+selected area becomes live and its toolbar stays usable; the boundary is drawn
+just outside the recorded rectangle so neither it nor the handles appear in the
+video.
+
+- **Record, pause, resume** with the same dot. Audio that arrives while paused is
+  dropped, so the file has no silent gap.
+- **Finish** with Save (published into the video folder), Open With (saved first,
+  then offered to installed video applications), Cloud (saved locally, then
+  uploaded) or Copy (the finished *file* goes on the clipboard, ready to paste
+  into a file manager, chat or mail client). Cancel/Exit discards the recording.
+- **Draw live.** Pencil, line, arrow, rectangle, circle, marker, rectangular
+  selection, text, counter, invert and pixelate paint over the live desktop, and
+  the encoder reads exactly what you see. Marks hold, fade and expire on their
+  own; hold and fade are configurable globally and per tool.
+- **Counter modes** for a numbered walk-through: hold every bubble until you
+  switch tools, or fade the whole group from its first bubble.
+- **Audio**: system audio on by default, microphone opt-in, one device selector
+  per source (follow the default device or pin a named source), 48/44.1/32 kHz
+  capture and 32–512 kbit/s, with AAC for MP4/MKV and Opus for WebM.
+- **Multi-monitor**: the selection can start or end on any monitor, including one
+  left of or above the primary. Recording covers a region on one monitor with a
+  common scale factor.
+- **Requirements**: Linux (X11 session), a compositing window manager, and FFmpeg
+  with `x11grab` and PulseAudio input. `pactl` is needed only to follow default
+  audio devices. The Wayland adapter builds when the development files are
+  present, but Record stays disabled on Wayland until region capture and overlay
+  placement are verified on a real compositor. Recording is not built for Windows
+  or macOS.
+
+See [docs/screen-recording.md](docs/screen-recording.md) for the precise
+behaviour, including why an inverted patch cannot follow changes after the stroke
+is released.
+
+### Remote storage
+
+Screenshots and recordings can be uploaded after saving, over FTP, SFTP, SSH
+(streamed over `ssh`) or S3-compatible object storage. Configure it once in
+**Configuration → Remote Storage**:
+
+- **Connection**: protocol, host, port, user, SSH private key and `known_hosts`
+  (strict host verification), remote directory; for S3 the endpoint, region,
+  bucket, access key ID and object key prefix.
+- **Separate destinations per media kind**: screenshots and recordings each have
+  their own remote directory — or object key prefix on S3 — so the two do not
+  share one folder.
+- **Convert or copy**: each media kind uploads the saved file byte for byte, or a
+  converted copy. Images choose format, quality and compression level; videos
+  choose container, encoder, rate control (CRF or average bitrate), quality,
+  bitrate and audio handling.
+- **Secrets are never saved**: the FTP password and S3 secret key are requested at
+  upload time or read from the environment, and stay out of the configuration
+  file, the process arguments and the log. FTP sends both password and file
+  unencrypted, so it needs an explicit acknowledgement.
+- A failed transfer never removes the locally saved capture.
 
 ### Screenshot features
 
@@ -360,9 +478,36 @@ Now every time you press <kbd>Prt Sc</kbd> it will start Flameshot GUI instead o
 
 Flameshot can be installed on Linux, Microsoft Windows, and macOS.
 
+### Builds from this fork
+
+The recorder, the remote storage uploader and the AI assistant exist only in
+this fork. To use them, build from this repository:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+cmake --build build -j2
+sudo cmake --install build
+```
+
+Use `CMAKE_INSTALL_PREFIX=/usr` for a system-wide install. The launcher entry
+bakes the configure-time binary directory into its `Exec` line, so a tree
+configured for `/usr/local` and installed under `/usr` produces a desktop file
+that desktop environments drop instead of showing. After upgrading, quit the
+running tray process before starting the new binary; an old process keeps the old
+settings and tools.
+
+`-DENABLE_RECORDING=OFF` builds without the recorder (that is also the default on
+non-Linux platforms). `ffmpeg` is needed at run time for recording, the OpenSSH
+client for SFTP/SSH, `curl` for FTP, and `pactl` from `pulseaudio-utils` to follow
+default audio devices.
+
 ### Prebuilt packages
 
 Some prebuilt packages are provided on [the release page of the GitHub project repository](https://github.com/flameshot-org/flameshot/releases).
+
+That release page, and every package listed in the next section, is **upstream
+Flameshot**: they contain the screenshot program only, without the recorder,
+without remote storage and without the AI assistant.
 
 ### Packages from Repository
 

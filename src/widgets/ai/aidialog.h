@@ -21,6 +21,16 @@ public:
     QString mode() const;
     QString prompt() const;
 
+    // Hand-off of one answered prompt. The AI tool asks the user while the
+    // capture editor is still open, because a cancelled prompt must leave the
+    // editor untouched; the AI backend starts afterwards, once the editor is
+    // dismissed. The tool stores the answer, the backend reads it once and
+    // never asks the user again.
+    static void setPendingAnswer(const AIDialog& answeredDialog);
+    static QString pendingAnswerMode();
+    static QString pendingAnswerPrompt();
+    static void clearPendingAnswer();
+
 private:
     void onModeChanged(int index);
     void updatePlaceholder();

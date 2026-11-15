@@ -42,6 +42,9 @@ protected:
 
 private:
     void adjustDevicePixelRatio(QPixmap& pixmap);
+    // Maps a whole-desktop pixmap onto the united logical screen geometry, so
+    // the overlay coordinates and the pixmap pixels line up on every monitor.
+    void normalizeDesktopPixmap(QPixmap& screenshot);
     QWidget* createMonitorPreviews(const QPixmap& fullScreenshot);
     void cancelMonitorSelection();
     void moveHighlightedMonitorPreview(int offset);

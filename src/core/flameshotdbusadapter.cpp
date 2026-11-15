@@ -27,6 +27,11 @@ void FlameshotDBusAdapter::attachTextToClipboard(const QString& text,
     FlameshotDaemon::instance()->attachTextToClipboard(text, notification);
 }
 
+void FlameshotDBusAdapter::attachFileToClipboard(const QString& path)
+{
+    FlameshotDaemon::instance()->attachFileToClipboard(path);
+}
+
 void FlameshotDBusAdapter::attachPin(const QByteArray& data)
 {
     FlameshotDaemon::instance()->attachPin(data);

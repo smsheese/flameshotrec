@@ -112,6 +112,17 @@ void SelectionWidget::setIgnoreMouse(bool ignore)
     updateCursor();
 }
 
+void SelectionWidget::setRecordingFrame(bool active)
+{
+    if (m_recordingFrame == active) {
+        return;
+    }
+    m_recordingFrame = active;
+    // The parent draws the boundary outside the recorded region; this widget
+    // must not paint a border or handles inside it.
+    update();
+}
+
 /**
  * Set the cursor that will be active when the mouse is inside the selection and
  * the mouse is not clicked.
@@ -383,6 +394,10 @@ void SelectionWidget::parentMouseMoveEvent(QMouseEvent* e)
 
 void SelectionWidget::paintEvent(QPaintEvent*)
 {
+    if (m_recordingFrame) {
+        // Recording draws its own boundary outside the encoded crop.
+        return;
+    }
     QPainter p(this);
     if (!p.isActive()) {
         return;

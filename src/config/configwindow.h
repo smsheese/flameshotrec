@@ -10,7 +10,12 @@ class ShortcutsWidget;
 class GeneralConf;
 class QFileSystemWatcher;
 class VisualsEditor;
+class VideoConf;
 class QWidget;
+
+namespace RemoteStorage {
+class RemoteStorageConf;
+}
 
 class ConfigWindow : public QWidget
 {
@@ -38,6 +43,12 @@ private:
 
     VisualsEditor* m_visuals;
     QWidget* m_visualsTab;
+
+    VideoConf* m_video;
+    QWidget* m_videoTab;
+
+    RemoteStorage::RemoteStorageConf* m_remoteStorage = nullptr;
+    QWidget* m_remoteStorageTab = nullptr;
 
     void initErrorIndicator(QWidget* tab, QWidget* widget);
 };

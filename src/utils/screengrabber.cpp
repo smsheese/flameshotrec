@@ -2,6 +2,7 @@
 #include "screengrabber.h"
 #include "core/qguiappcurrentscreen.h"
 #include "utils/abstractlogger.h"
+#include "utils/capturegeometry.h"
 #include "utils/confighandler.h"
 #include "utils/monitorpreview.h"
 #include "utils/systemnotification.h"
@@ -343,7 +344,64 @@ QPixmap ScreenGrabber::grabEntireDesktop(bool& ok, int preSelectedMonitor)
         }
     }
 
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
+    if (!m_info.waylandDetected()) {
+        // Ordinary Print Screen on X11 starts the familiar full-desktop
+        // selection overlay immediately, so a region can be marked on any
+        // monitor, including one with a negative origin. Callers that asked for
+        // a specific monitor took the crop path above, and the noninteractive
+        // `flameshot screen` command passes the monitor under the pointer.
+        m_selectedMonitor = -1;
+        normalizeDesktopPixmap(screenshot);
+        return screenshot;
+    }
+    // A Wayland surface cannot be placed across monitors, so keep the
+    // per-monitor selection there: the overlay is sized to one screen and the
+    // screenshot is cropped to match.
     return selectMonitorAndCrop(screenshot, ok);
+#else
+    return selectMonitorAndCrop(screenshot, ok);
+#endif
+}
+
+void ScreenGrabber::normalizeDesktopPixmap(QPixmap& screenshot)
+{
+    const QList<QScreen*> screens = QGuiApplication::screens();
+    if (screenshot.isNull() || screens.isEmpty()) {
+        return;
+    }
+    // The desktop overview is addressed in logical coordinates, so the pixmap
+    // must map onto the united screen geometry: 0,0 in the pixmap is the top
+    // left of the leftmost/topmost monitor even when that origin is negative.
+    QList<QRect> screenRects;
+    qreal dpr = screens.first()->devicePixelRatio();
+    bool uniformDpr = true;
+    for (QScreen* screen : screens) {
+        screenRects.append(screen->geometry());
+        if (!qFuzzyCompare(screen->devicePixelRatio(), dpr)) {
+            uniformDpr = false;
+        }
+    }
+    if (!uniformDpr || dpr <= 0.0) {
+        // Mixed scale factors cannot be mapped by one ratio; leave the pixmap as
+        // the backend produced it and keep per-monitor cropping in charge.
+        return;
+    }
+    const QRect desktop = CaptureGeometry::unitedDesktop(screenRects);
+    const qreal expectedWidth = desktop.width() * dpr;
+    const qreal expectedHeight = desktop.height() * dpr;
+    if (qAbs(screenshot.width() - expectedWidth) > 1.0 ||
+        qAbs(screenshot.height() - expectedHeight) > 1.0) {
+        // Some backends (for example the freedesktop portal) hand back physical
+        // pixels with no scale factor attached.
+        if (screenshot.width() > 0 && screenshot.height() > 0 &&
+            desktop.width() > 0 && desktop.height() > 0) {
+            screenshot.setDevicePixelRatio(
+              qreal(screenshot.width()) / qreal(desktop.width()));
+        }
+    } else {
+        screenshot.setDevicePixelRatio(dpr);
+    }
 }
 
 QPixmap ScreenGrabber::grabFullDesktop(bool& ok)

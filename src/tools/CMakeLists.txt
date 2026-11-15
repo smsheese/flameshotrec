@@ -57,6 +57,9 @@ target_sources(
           text/textwidget.cpp)
 target_sources(flameshot PRIVATE undo/undotool.h undo/undotool.cpp)
 target_sources(flameshot PRIVATE ai/aitool.h ai/aitool.cpp)
+if(ENABLE_RECORDING)
+  target_sources(flameshot PRIVATE record/recordtool.h record/recordtool.cpp)
+endif()
 
 target_sources(
   flameshot

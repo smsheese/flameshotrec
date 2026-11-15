@@ -1,5 +1,7 @@
 <RCC>
     <qresource prefix="/">
+        <file>img/material/black/record.svg</file>
+        <file>img/material/white/record.svg</file>
         <file>img/app/org.flameshot.Flameshot.svg</file>
         <file>img/app/flameshot.svg</file>
         <file>img/app/org.flameshot.Flameshot.png</file>

@@ -50,8 +50,8 @@ constexpr const char* visibleInDockProperty = "_visibleInDock";
 #include "utils/confighandler.h"
 #include "utils/screengrabber.h"
 #include "utils/screenshotsaver.h"
-#include "widgets/ai/aidialog.h"
 #include "widgets/ai/aichatwidget.h"
+#include "widgets/ai/aidialog.h"
 #include "widgets/capture/capturewidget.h"
 #include "widgets/capturelauncher.h"
 #include "widgets/infowindow.h"
@@ -79,7 +79,7 @@ constexpr const char* visibleInDockProperty = "_visibleInDock";
 #endif
 
 Flameshot::Flameshot()
-  : m_haveExternalWidget(false)
+  : m_externalWidgets(0)
   , m_captureWindow(nullptr)
 #if (defined(Q_OS_MACOS) || defined(Q_OS_WIN))
   , m_HotkeyScreenshotCapture(nullptr)
@@ -202,7 +202,11 @@ void Flameshot::screen(CaptureRequest req, const int screenNumber)
 
     if (screenNumber < 0) {
         ScreenGrabber grabber;
-        p = grabber.grabEntireDesktop(ok);
+        // The noninteractive screen command still captures the monitor under
+        // the pointer. Only the area-selection GUI spans the full desktop.
+        QScreen* currentScreen = QGuiAppCurrentScreen().currentScreen();
+        if (!currentScreen) currentScreen = qApp->primaryScreen();
+        p = grabber.grabEntireDesktop(ok, qApp->screens().indexOf(currentScreen));
         if (ok) {
             QScreen* selectedScreen = grabber.getSelectedScreen();
             if (selectedScreen) {
@@ -405,24 +409,28 @@ bool Flameshot::resolveAnyConfigErrors()
     if (!confighandler.checkUnrecognizedSettings() ||
         !confighandler.checkSemantics()) {
         auto* resolver = new ConfigResolver();
-        QObject::connect(
-          resolver, &ConfigResolver::rejected, [resolver, &resolved]() {
-              resolved = false;
-              resolver->deleteLater();
-              if (origin() == CLI) {
-                  exit(1);
-              }
-          });
-        QObject::connect(
-          resolver, &ConfigResolver::accepted, [resolver, &resolved]() {
-              resolved = true;
-              resolver->close();
-              resolver->deleteLater();
-              // Ensure that the dialog is closed before starting capture
-              qApp->processEvents();
-          });
+        bool rejected = false;
+        QObject::connect(resolver,
+                         &ConfigResolver::rejected,
+                         [&rejected, &resolved]() {
+                             rejected = true;
+                             resolved = false;
+                         });
+        QObject::connect(resolver,
+                         &ConfigResolver::accepted,
+                         [&resolved]() { resolved = true; });
         resolver->exec();
+        // The dialog and any detail dialog it opened must be destroyed while
+        // Qt is still fully initialised.  Destroying a widget whose platform
+        // window is alive when Qt's thread-local GL context storage is already
+        // gone aborts in QSurface::~QSurface -> QOpenGLContext::currentContext()
+        // (see KNOWN-ISSUES.md, C1), and calling exit() from inside the
+        // rejected() handler is what puts that teardown in the wrong order.
+        delete resolver;
         qApp->processEvents();
+        if (rejected && origin() == CLI) {
+            exit(1);
+        }
     }
     return resolved;
 }
@@ -536,54 +544,119 @@ void Flameshot::exportCapture(const QPixmap& capture,
     }
 }
 
-void Flameshot::setExternalWidget(bool b)
+void Flameshot::addExternalWindow()
 {
-    m_haveExternalWidget = b;
+    ++m_externalWidgets;
 }
-bool Flameshot::haveExternalWidget()
+
+void Flameshot::removeExternalWindow()
 {
-    return m_haveExternalWidget;
+    if (m_externalWidgets > 0) {
+        --m_externalWidgets;
+    }
+}
+
+int Flameshot::externalWindowCount() const
+{
+    return m_externalWidgets;
+}
+
+bool Flameshot::haveExternalWidget() const
+{
+    return m_externalWidgets > 0;
+}
+
+bool Flameshot::shouldExitAfterCapture() const
+{
+    // A capture is the end of `flameshot gui` only when this process has no
+    // daemon to hand the capture to and no window (AI prompt, AI chat, tool
+    // dialog) still needs to run.
+    return FlameshotDaemon::instance() == nullptr && !haveExternalWidget();
 }
 
 void Flameshot::runAIBackend(const QPixmap& capture)
 {
     ConfigHandler config;
     if (!config.iaEnabled()) {
+        AIDialog::clearPendingAnswer();
         return;
     }
 
-    QString mode = config.iaDefaultMode();
+    // Starts the chat window of one answered prompt. Everything is kept here
+    // so that every path below starts exactly one request. `capture` is the
+    // marked snapshot and is copied, so it outlives the capture editor.
+    // NOLINTNEXTLINE(bugprone-easily-swap-parameters)
+    auto startRequest = [this](const QString& mode,
+                               const QString& prompt,
+                               const QPixmap& markedCapture) {
+        ConfigHandler requestConfig;
+        auto* chat = new AIChatWidget();
+        chat->setAttribute(Qt::WA_DeleteOnClose);
+        addExternalWindow();
+        QObject::connect(chat, &QObject::destroyed, this, [this]() {
+            removeExternalWindow();
+        });
+        chat->show();
+        chat->activateWindow();
+        chat->raise();
+        chat->startRequest(requestConfig.iaApiUrl(),
+                           requestConfig.iaApiToken(),
+                           requestConfig.iaModel(),
+                           mode,
+                           prompt,
+                           markedCapture);
+    };
+
+    QString mode = AIDialog::pendingAnswerMode();
+    if (!mode.isEmpty()) {
+        // The AI tool already asked the user and dismissed the editor: use
+        // that answer instead of asking a second time.
+        const QString prompt = AIDialog::pendingAnswerPrompt();
+        AIDialog::clearPendingAnswer();
+        startRequest(mode, prompt, capture);
+        return;
+    }
+
+    mode = config.iaDefaultMode();
     if (mode.isEmpty()) {
         mode = QStringLiteral("ask");
     }
-    QString prompt;
 
-    // Show the native Qt dialog to choose mode and prompt.
-    if (config.iaShowDialog()) {
-        AIDialog dialog(mode, prompt);
-        if (dialog.exec() != QDialog::Accepted) {
-            return;
-        }
-        mode = dialog.mode();
-        prompt = dialog.prompt();
+    if (!config.iaShowDialog()) {
+        startRequest(mode, QString(), capture);
+        return;
     }
 
-    // Open the native chat window and start the request.
-    auto* chat = new AIChatWidget();
-    chat->setAttribute(Qt::WA_DeleteOnClose);
-    setExternalWidget(true);
-    QObject::connect(chat, &QObject::destroyed, this, [this]() {
-        setExternalWidget(false);
-    });
-    chat->show();
-    chat->activateWindow();
-    chat->raise();
-    chat->startRequest(config.iaApiUrl(),
-                       config.iaApiToken(),
-                       config.iaModel(),
-                       mode,
-                       prompt,
-                       capture);
+    // Requests that did not go through the AI tool (e.g. `flameshot gui --ai`)
+    // still have to ask the user. Show the prompt without blocking the caller:
+    // this runs while the capture editor is being torn down.
+    auto* dialog = new AIDialog(mode, QString());
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowModality(Qt::ApplicationModal);
+    // The prompt is now shown while the process is still exporting, i.e. the
+    // capture path may finish and call shouldExitAfterCapture() before the user
+    // answers. Counting the prompt as an external window keeps the process
+    // alive until it is gone; the answer starts the chat, which counts again.
+    addExternalWindow();
+    QPointer<AIDialog> answeredDialog(dialog);
+    QObject::connect(dialog,
+                     &QObject::destroyed,
+                     this,
+                     [this]() { removeExternalWindow(); });
+    QObject::connect(dialog,
+                     &QDialog::accepted,
+                     this,
+                     [answeredDialog, startRequest, capture]() {
+                         if (answeredDialog.isNull()) {
+                             return;
+                         }
+                         startRequest(answeredDialog->mode(),
+                                      answeredDialog->prompt(),
+                                      capture);
+                     });
+    dialog->show();
+    dialog->activateWindow();
+    dialog->raise();
 }
 
 // STATIC ATTRIBUTES

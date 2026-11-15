@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 # cmake_policy(SET CMP0076 OLD)
 
-set(FLAMESHOT_VERSION 15.0.0)
+set(FLAMESHOT_VERSION 15.1.0)
 
 # Flameshot-org
 set(GIT_API_URL "https://api.github.com/repos/flameshot-org/flameshot/releases/latest")
@@ -91,6 +91,16 @@ option(USE_LAUNCHER_ABSOLUTE_PATH "Use absolute path for the desktop launcher" O
 option(USE_WAYLAND_CLIPBOARD "USE KF Gui Wayland Clipboard" OFF)
 option(DISABLE_UPDATE_CHECKER "Disable check for updates" OFF)
 option(ENABLE_IMGUR "Enable Imgur Uploader" OFF)
+if(UNIX AND NOT APPLE)
+  set(DEFAULT_ENABLE_RECORDING ON)
+else()
+  set(DEFAULT_ENABLE_RECORDING OFF)
+endif()
+option(ENABLE_RECORDING "Build the optional screen recording module" ${DEFAULT_ENABLE_RECORDING})
+
+if(ENABLE_RECORDING)
+  add_compile_definitions(ENABLE_RECORDING)
+endif()
 
 if(ENABLE_IMGUR)
   add_compile_definitions(ENABLE_IMGUR)
@@ -155,6 +165,11 @@ if(WIN32 OR APPLE)
   FetchContent_MakeAvailable(QHotKey)
 endif()
 
+if(UNIX AND NOT APPLE)
+  # Third-party development files keep their own install component. CPack's
+  # runtime package includes only the application and its resources.
+  set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME Runtime)
+endif()
 add_subdirectory(src)
 
 # CPack
@@ -208,6 +223,20 @@ else()
   set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}-linux")
   set(CPACK_GENERATOR TGZ)
   set(CPACK_SOURCE_GENERATOR TGZ)
+  set(CPACK_STRIP_FILES ON)
+  set(CPACK_COMPONENTS_ALL Runtime)
+  set(CPACK_DEB_COMPONENT_INSTALL ON)
+  set(CPACK_DEBIAN_RUNTIME_PACKAGE_NAME flameshot)
+  set(CPACK_DEBIAN_RUNTIME_FILE_NAME DEB-DEFAULT)
+  set(CPACK_DEBIAN_PACKAGE_SECTION "graphics")
+  set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+  set(CPACK_DEBIAN_PACKAGE_RELEASE "1")
+  if(ENABLE_RECORDING)
+    set(CPACK_DEBIAN_RUNTIME_PACKAGE_DEPENDS "ffmpeg, curl, openssh-client")
+    # pactl is only needed to follow the default audio devices; explicitly
+    # configured source names work without it, so it stays a recommendation.
+    set(CPACK_DEBIAN_RUNTIME_PACKAGE_RECOMMENDS "pulseaudio-utils")
+  endif()
 endif()
 
 include(CPack)
